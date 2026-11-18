@@ -1,0 +1,42 @@
+<mujoco model="3r-writing-manipulator">
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.002" integrator="implicitfast" gravity="0 0 -9.81"/>
+  <default><joint damping=".025" armature=".0002"/><geom friction=".8 .005 .0001"/></default>
+  <worldbody>
+    <geom name="desk" type="plane" pos="0 0 0" size=".6 .6 .01"/>
+    <body name="base"><geom type="cylinder" size=".06 .02" pos="0 0 .021" contype="0" conaffinity="0"/>
+      <body name="link1" pos="0 0 .055">
+        <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".04" armature=".001"/>
+        <inertial pos=".065 0 .004" mass=".20" diaginertia=".0007 .0007 .0002"/>
+        <geom name="link1_collision" type="capsule" fromto="0 0 .004 .120 0 .004" size=".010" contype="1" conaffinity="1"/>
+        <body name="link2" pos=".120 0 .014">
+          <joint name="joint2" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".025" armature=".0006"/>
+          <inertial pos=".055 0 .004" mass=".16" diaginertia=".0004 .0004 .00015"/>
+          <geom name="link2_collision" type="capsule" fromto="0 0 .004 .100 0 .004" size=".010" contype="1" conaffinity="1"/>
+          <body name="link3" pos=".100 0 .014">
+            <joint name="joint3" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".015" armature=".0003"/>
+            <inertial pos=".035 0 .011" mass=".10" diaginertia=".00016 .00016 .00007"/>
+            <geom name="link3_collision" type="capsule" fromto="0 0 .011 .070 0 .011" size=".009" contype="1" conaffinity="1"/>
+            <body name="pen" pos=".060 0 0">
+              <joint name="pen_lift" type="slide" axis="0 0 1" range="0 .012" damping=".15"/>
+              <inertial pos="0 0 -.03" mass=".018" diaginertia=".00001 .00001 .000003"/>
+              <geom name="pen_shaft" type="capsule" fromto="0 0 -.079 0 0 .015" size=".0025" contype="0" conaffinity="0"/>
+              <geom name="pen_contact" type="sphere" pos="0 0 -.081" size=".001" contype="1" conaffinity="1"/>
+              <site name="pen_tip" pos="0 0 -.082" size=".0007"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <position name="motor1" joint="joint1" kp="7" ctrlrange="-3.14159 3.14159" forcerange="-1.5 1.5"/>
+    <position name="motor2" joint="joint2" kp="5" ctrlrange="-3.14159 3.14159" forcerange="-1.1 1.1"/>
+    <position name="motor3" joint="joint3" kp="3" ctrlrange="-3.14159 3.14159" forcerange="-.7 .7"/>
+    <position name="pen_servo" joint="pen_lift" kp="80" ctrlrange="0 .012" forcerange="-8 8"/>
+  </actuator>
+  <sensor>
+    <jointpos joint="joint1"/><jointpos joint="joint2"/><jointpos joint="joint3"/><jointpos joint="pen_lift"/>
+    <framepos objtype="site" objname="pen_tip"/>
+  </sensor>
+</mujoco>
