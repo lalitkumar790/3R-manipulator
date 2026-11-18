@@ -1,40 +1,37 @@
 # 3R Manipulator — ROS 2 + MuJoCo
 
-This project models a 3-revolute-joint planar drawing robot using five STL CAD parts: Base Ring, Base Lid, Link 1, Link 2, and Link 3 / Pen Holder.
+[Interactive joint explorer](https://lalitkumar790.github.io/3R-manipulator/) (GitHub Pages; requires Pages to be enabled)
 
-## Preliminary geometry (from uploaded STL meshes)
-- Base ring: 154 x 140 x 36 mm
-- Base lid: 154 x 140 x 7 mm
-- Link 1: ~150 x 48 x 8 mm; **candidate** joint spacing 120 mm
-- Link 2: ~130 x 48 x 8 mm; **candidate** joint spacing 100 mm
-- Link 3 pen holder: ~90 x 32 x 22 mm; pen-hole center near local x=28 mm
+**This is a preliminary, uncalibrated planar 3R arm model.** Uploaded CAD STL files establish the overall shapes, but no assembly mates or stepper shaft positions are supplied; all pivots are provisional.
 
-## First-pass kinematic model
+## Joint tree
 
-base → J1 (vertical yaw) → link1 → J2 (vertical yaw) → link2 → J3 (vertical yaw) → link3 → pen.
+Base Ring + Base Lid (fixed) → J1 Z → Link 1 (120 mm) → J2 Z → Link 2 (100 mm) → J3 Z → Link 3 / Pen Holder (28 mm to pen). The base joint is at z=55 mm; link-to-link offsets are 14 mm each.
 
-All link meshes were exported with their length roughly along local +X; proposed hinge axes are +Z. Base-to-J1 height 55 mm, link-to-link Z offsets 14 mm each. **These transforms are provisional and must be verified against actual stepper shafts, motor brackets, bearings, and assembly pictures.** STL files do not encode mating constraints.
+## Local MuJoCo
 
-## Ready-to-run implementation
+The original STL meshes must be copied to `meshes/` (and `ros2/meshes/` for the ROS package). **Mesh binaries are not yet uploaded in this repository; download the complete STL-inclusive project ZIP from the ChatGPT conversation.** Expected names: `base_ring.stl`, `base_lid.stl`, `link1.stl`, `link2.stl`, `link3_penholder.stl`.
 
-A complete downloadable project bundle was generated in the ChatGPT conversation, including:
-- `scene.xml`: MuJoCo MJCF with stepper-like position actuators, three hinges, mesh visuals and pen-tip site
-- `robot.urdf`: matching ROS 2 robot description
-- `ros2/`: self-contained ament_python package publishing `/joint_states` and `/pen_tip_pose`, accepting `/joint_commands`
-- `scripts/simulate.py`: viewer/headless runner
-- `scripts/kinematics.py`: planar 3R forward/inverse kinematics
-- `tests/test_static.py`: structural sanity checks
-- `meshes/`: the five source STL geometries
+```bash
+pip install mujoco numpy
+python scripts/simulate.py --demo
+python scripts/simulate.py --headless --seconds 5 --demo
+python scripts/kinematics.py
+```
 
-The simulation files and binaries are in the bundle; they have **not yet been committed to this GitHub repository**.
+## ROS 2
 
-## Future writing
+```bash
+mkdir -p ~/three_r_ws/src
+cp -r ros2 ~/three_r_ws/src/three_r_sim
+cd ~/three_r_ws
+colcon build --symlink-install
+source install/setup.bash
+ros2 run three_r_sim three_r_bridge
+```
 
-The arm is planar, so it can follow XY paths with a vertical pen at a fixed height. Add pen lift, collision/clearance validation, stepper resolution/driver dynamics, trajectory control, and calibration before real writing.
+Subscribe to `/joint_states` and `/pen_tip_pose`. Send `/joint_commands` as `sensor_msgs/msg/JointState` with `name: [joint1, joint2, joint3]` and `position` in radians.
 
-## Status
+## Scope and limitations
 
-- CAD envelopes inspected
-- Initial joint hierarchy and provisional transforms established
-- XML and kinematics static checks passed locally
-- MuJoCo runtime and physical fit **not verified**
+GitHub Pages runs only a browser-based kinematics visualization, **not the actual MuJoCo dynamics simulator or ROS 2**. Native simulation requires Python + MuJoCo; ROS 2 bridge requires ROS 2. Physical mating faces, motor mounts, collision, torque sizing and pen tip Z remain unverified. Writing will additionally require pen lift / contact control.

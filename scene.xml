@@ -1,0 +1,37 @@
+<mujoco model="3R planar manipulator provisional">
+<compiler angle="radian" meshdir="meshes" autolimits="true"/>
+<option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/>
+<asset>
+<mesh name="base_ring_mesh" file="base_ring.stl" scale=".001 .001 .001"/>
+<mesh name="base_lid_mesh" file="base_lid.stl" scale=".001 .001 .001"/>
+<mesh name="link1_mesh" file="link1.stl" scale=".001 .001 .001"/>
+<mesh name="link2_mesh" file="link2.stl" scale=".001 .001 .001"/>
+<mesh name="link3_mesh" file="link3_penholder.stl" scale=".001 .001 .001"/>
+</asset>
+<worldbody>
+<geom name="desk" type="plane" size=".55 .55 .01" rgba=".9 .9 .86 1"/>
+<body name="fixed_base">
+<geom name="base_ring" type="mesh" mesh="base_ring_mesh" pos="0 0 .002" contype="0" conaffinity="0"/>
+<geom name="base_lid" type="mesh" mesh="base_lid_mesh" pos="0 0 .038" contype="0" conaffinity="0"/>
+<body name="link1" pos="0 0 .055">
+<joint name="joint1" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".04"/>
+<inertial pos=".065 0 .004" mass=".20" diaginertia=".0007 .0007 .0002"/>
+<geom type="mesh" mesh="link1_mesh" contype="0" conaffinity="0"/>
+<body name="link2" pos=".120 0 .014">
+<joint name="joint2" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".025"/>
+<inertial pos=".055 0 .004" mass=".16" diaginertia=".0004 .0004 .00015"/>
+<geom type="mesh" mesh="link2_mesh" contype="0" conaffinity="0"/>
+<body name="link3" pos=".100 0 .014">
+<joint name="joint3" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".015"/>
+<inertial pos=".035 0 .011" mass=".10" diaginertia=".00016 .00016 .00007"/>
+<geom type="mesh" mesh="link3_mesh" contype="0" conaffinity="0"/>
+<site name="pen_tip" pos=".028 0 -.078" size=".003" rgba="1 0 0 1"/>
+<geom type="cylinder" fromto=".028 0 -.078 .028 0 .018" size=".002" contype="0" conaffinity="0"/>
+</body></body></body></body></worldbody>
+<actuator>
+<position name="stepper1" joint="joint1" kp="6" ctrlrange="-3.14159 3.14159" forcerange="-1.5 1.5"/>
+<position name="stepper2" joint="joint2" kp="4" ctrlrange="-3.14159 3.14159" forcerange="-1 1"/>
+<position name="stepper3" joint="joint3" kp="2" ctrlrange="-3.14159 3.14159" forcerange="-.5 .5"/>
+</actuator>
+<sensor><jointpos joint="joint1"/><jointpos joint="joint2"/><jointpos joint="joint3"/><framepos objtype="site" objname="pen_tip"/></sensor>
+</mujoco>
