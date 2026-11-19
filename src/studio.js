@@ -59,17 +59,60 @@ attachCad(cadParts,(count,total,name,error)=>{
  if(errors.length)document.getElementById('warning').textContent='Some CAD meshes could not load: '+errors.join(', ');
 });
 
-function stepper(group,z){
- // Motoring envelope is illustrative; these bodies are not derived from original motor CAD.
- const housing=solid(group,new THREE.BoxGeometry(.032,.032,.020),mat(0x3b4b60,.45,.53),0,0,z-.017);
- solid(group,new THREE.CylinderGeometry(.008,.008,.006,30),steel,0,0,z-.005).rotation.x=Math.PI/2;
- return housing;
+// Illustrative 28BYJ-48 motor assembly, distinct from the user's five CAD meshes.
+// Motor housings are attached to fixed upstream links, and output shafts to moving links.
+const motorSteel=mat(0xabb8c5,.56,.38);
+const motorBlue=mat(0x346baa,.15,.64);
+const motorDark=mat(0x354658,.38,.54);
+const motorShaft=mat(0xe3edf6,.81,.22);
+const motorColors=[mat(0xe05c51),mat(0xf0d36a),mat(0x5399d1),mat(0x343d49),mat(0xc1d2df)];
+function motorCylinder(parent,radius,height,material,x,y,z){
+ const mesh=solid(parent,new THREE.CylinderGeometry(radius,radius,height,40),material,x,y,z);
+ mesh.rotation.x=Math.PI/2;return mesh;
 }
-// Hide illustrative box-shaped motors: user provided CAD has no motor meshes.
-// Avoid visually misrepresenting the submitted parts.
-for(const g of [j1,j2,j3]){
- solid(g,new THREE.CylinderGeometry(.0065,.0065,.002,32),steel,0,0,.011).rotation.x=Math.PI/2;
+function installMotor(upstream,xyz,label){
+ const mounting=new THREE.Group();
+ mounting.name=label+' body (fixed side)';
+ mounting.position.set(...xyz);
+ upstream.add(mounting);
+ // Offset 8mm between the circular can centre and its output shaft is characteristic
+ // of small 28BYJ-48 gearmotors. Sizes are approximations, not a mechanical clearance test.
+ motorCylinder(mounting,.014,.018,motorSteel,-.008,0,-.023);
+ motorCylinder(mounting,.014,.002,motorDark,-.008,0,-.013);
+ motorCylinder(mounting,.007,.004,motorBlue,0,0,-.010);
+ for(const y of [-.016,.016]){
+   solid(mounting,new THREE.BoxGeometry(.008,.007,.002),motorBlue,-.008,y,-.011);
+   motorCylinder(mounting,.0016,.002,motorDark,-.008,y,-.0096);
+ }
+ for(let i=0;i<5;i++){
+   const wirePath=new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-.019,(i-2)*.0013,-.026),
+    new THREE.Vector3(-.028,(i-2)*.0017,-.034),
+    new THREE.Vector3(-.034,(i-2)*.0017,-.039)
+   ]);
+   solid(mounting,new THREE.TubeGeometry(wirePath,10,.00045,4,false),motorColors[i]);
+ }
+ return mounting;
 }
+const motorBodies=[
+ installMotor(scene,[0,0,.055],'J1 stepper'),
+ installMotor(j1,[.120,0,.014],'J2 stepper'),
+ installMotor(j2,[.100,0,.014],'J3 stepper')
+];
+const motorRotors=[j1,j2,j3].map((moving,i)=>{
+ const shaft=motorCylinder(moving,.0025,.012,motorShaft,0,0,-.005);
+ shaft.name='J'+(i+1)+' rotating motor shaft';
+ return shaft;
+});
+function showMotorGeometry(on){
+ motorBodies.forEach(body=>body.visible=on);
+ motorRotors.forEach(shaft=>shaft.visible=on);
+ $('motor-description').textContent=on
+ ?'Three illustrated geared steppers with visible output shafts and coloured cable leads. Each motor housing follows the preceding link, while its output shaft follows the rotating joint.'
+ :'Stepper models hidden; only the supplied CAD parts remain visible.';
+}
+$('show-steppers').addEventListener('change',e=>showMotorGeometry(e.target.checked));
+showMotorGeometry(true);
 const penCarrier=new THREE.Group();penCarrier.position.set(.060,0,0);j3.add(penCarrier);
 const penBody=solid(penCarrier,new THREE.CylinderGeometry(.0032,.0032,.102,18),mat(0xe7f2fa,.18,.35),0,0,-.031);
 penBody.rotation.x=Math.PI/2;
