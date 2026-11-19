@@ -62,3 +62,8 @@ sections are **conceptual couplers** across existing axial gaps
 clearances, screw compatibility, joint centers, motor torque, and backlash
 need physical verification, and have not been validated with motor CAD or
 a collision solver. The user STL does not include 28BYJ-48 motor solids.
+
+
+## CAD link face orientation correction
+
+Original STL link coordinates are kept unchanged in the source data. For the installed model, the visual meshes of Link 1, Link 2, and Link 3 are rotated **180° about the local X axis** and offset +8 mm in local Z. This turns the recessed +Z face toward the motors beneath each supported plate, without flipping the actuated joint coordinate frames. In Link 3, the tall pen-holder boss consequently extends below the local plate. This is a visual assembly orientation hypothesis based on the STL's stepped surfaces; physical motor bodies, mechanical interfaces, and the pen-to-paper height remain subject to fit verification.

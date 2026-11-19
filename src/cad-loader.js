@@ -25,6 +25,11 @@ export async function attachCad(parts,onProgress=()=>{}){
      }));
      mesh.castShadow=true;mesh.receiveShadow=true;
      if(part.offset)mesh.position.set(...part.offset);
+     // All three source link STLs were exported with the motor recesses on +Z.
+     // Installed links present those pockets on -Z; rotate the VISUAL mesh 180°
+     // around its local X axis, preserving the 3R hinge axis in its parent group.
+     // Z offset is supplied by the part definition to preserve joint stack-up.
+     if(part.flipFace)mesh.rotation.x=Math.PI;
      part.parent.add(mesh);
      for(const old of part.replace||[])old.visible=false;
      count++;onProgress(count,names.length,name);

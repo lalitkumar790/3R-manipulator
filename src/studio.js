@@ -40,15 +40,15 @@ function linkGeometry(type){
  for(const [x,y,r] of holes){const p=new THREE.Path();p.absarc(x,y,r,0,Math.PI*2,true);s.holes.push(p)}
  const g=new THREE.ExtrudeGeometry(s,{depth:type===3?.022:.008,bevelEnabled:true,bevelThickness:.0005,bevelSize:.00035,bevelSegments:1,curveSegments:20,steps:1});g.computeVertexNormals();return g;
 }
-const link1Visual=solid(j1,linkGeometry(1),blue);
-const link2Visual=solid(j2,linkGeometry(2),amber);
-const link3Visual=solid(j3,linkGeometry(3),mint);
+const link1Visual=solid(j1,linkGeometry(1),blue);link1Visual.rotation.x=Math.PI;link1Visual.position.z=.008;
+const link2Visual=solid(j2,linkGeometry(2),amber);link2Visual.rotation.x=Math.PI;link2Visual.position.z=.008;
+const link3Visual=solid(j3,linkGeometry(3),mint);link3Visual.rotation.x=Math.PI;link3Visual.position.z=.008;
 const cadParts={
  base_ring:{parent:base,offset:[0,0,0],color:0x516b85,replace:[baseRingVisual]},
  base_lid:{parent:base,offset:[0,0,.036],color:0x8ba6b8,replace:[baseLidVisual]},
- link1:{parent:j1,color:0x54aafb,replace:[link1Visual]},
- link2:{parent:j2,color:0xe9b65c,replace:[link2Visual]},
- link3_penholder:{parent:j3,color:0x5bdfbc,replace:[link3Visual]}
+ link1:{parent:j1,offset:[0,0,.008],flipFace:true,color:0x54aafb,replace:[link1Visual]},
+ link2:{parent:j2,offset:[0,0,.008],flipFace:true,color:0xe9b65c,replace:[link2Visual]},
+ link3_penholder:{parent:j3,offset:[0,0,.008],flipFace:true,color:0x5bdfbc,replace:[link3Visual]}
 };
 attachCad(cadParts,(count,total,name,error)=>{
  const chip=document.getElementById('cad-status');
