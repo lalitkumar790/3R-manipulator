@@ -59,57 +59,83 @@ attachCad(cadParts,(count,total,name,error)=>{
  if(errors.length)document.getElementById('warning').textContent='Some CAD meshes could not load: '+errors.join(', ');
 });
 
-// Illustrative 28BYJ-48 motor assembly, distinct from the user's five CAD meshes.
-// Motor housings are attached to fixed upstream links, and output shafts to moving links.
-const motorSteel=mat(0xabb8c5,.56,.38);
-const motorBlue=mat(0x346baa,.15,.64);
-const motorDark=mat(0x354658,.38,.54);
-const motorShaft=mat(0xe3edf6,.81,.22);
+// CAD-registered 28BYJ-48 motor visualization. Hole centers were inspected in
+// the ORIGINAL (full-resolution) STLs, not estimated from reduced viewer meshes.
+// Base lid: shaft (0,0), screws (-8,+/-17.5) mm.
+// Link 1 : shaft (120,0), screws (112,+/-17.5) mm.
+// Link 2 : shaft (100,0), screws ( 92,+/-17.5) mm.
+// The motors are conceptual 28BYJ-48 bodies (not uploaded motor CAD).
+// Their placement is geometric registration, NOT proof of no collision or torque fit.
+const motorSteel=mat(0xaebbc6,.58,.34), motorBlue=mat(0x386fa7,.17,.59);
+const motorDark=mat(0x35485b,.48,.49),motorShaft=mat(0xd7e6f2,.76,.24);
+const motorScrew=mat(0x8f9dab,.67,.30),motorCoupler=mat(0xcfaa65,.55,.31);
 const motorColors=[mat(0xe05c51),mat(0xf0d36a),mat(0x5399d1),mat(0x343d49),mat(0xc1d2df)];
+const MOTOR_CAN_R=.014, MOTOR_CAN_H=.019;
+const MOTOR_SHAFT_OFFSET=-.008, MOTOR_SCREW_Y=.0175;
 function motorCylinder(parent,radius,height,material,x,y,z){
- const mesh=solid(parent,new THREE.CylinderGeometry(radius,radius,height,40),material,x,y,z);
+ const mesh=solid(parent,new THREE.CylinderGeometry(radius,radius,height,48),material,x,y,z);
  mesh.rotation.x=Math.PI/2;return mesh;
 }
-function installMotor(upstream,xyz,label){
+function placeCadMotor(spec){
  const mounting=new THREE.Group();
- mounting.name=label+' body (fixed side)';
- mounting.position.set(...xyz);
- upstream.add(mounting);
- // Offset 8mm between the circular can centre and its output shaft is characteristic
- // of small 28BYJ-48 gearmotors. Sizes are approximations, not a mechanical clearance test.
- motorCylinder(mounting,.014,.018,motorSteel,-.008,0,-.023);
- motorCylinder(mounting,.014,.002,motorDark,-.008,0,-.013);
- motorCylinder(mounting,.007,.004,motorBlue,0,0,-.010);
- for(const y of [-.016,.016]){
-   solid(mounting,new THREE.BoxGeometry(.008,.007,.002),motorBlue,-.008,y,-.011);
-   motorCylinder(mounting,.0016,.002,motorDark,-.008,y,-.0096);
+ mounting.name=spec.name+' fixed-side 28BYJ-48 motor';
+ mounting.position.set(...spec.shaftOrigin);
+ spec.upstream.add(mounting);
+ // The flange's top is flush to the UNDERSIDE of the original CAD plate,
+ // not floating on the moving link. Mounting screws align to the CAD holes.
+ const z=spec.mountFace;
+ motorCylinder(mounting,MOTOR_CAN_R,MOTOR_CAN_H,motorSteel,MOTOR_SHAFT_OFFSET,0,z-MOTOR_CAN_H/2);
+ motorCylinder(mounting,.0138,.0012,motorDark,MOTOR_SHAFT_OFFSET,0,z-.001);
+ motorCylinder(mounting,.0088,.002,motorBlue,0,0,z-.001);
+ for(const sign of [-1,1]){
+   const y=sign*MOTOR_SCREW_Y;
+   // Two mounting ears with 35mm centre spacing.
+   const ear=solid(mounting,new THREE.BoxGeometry(.011,.0065,.0014),motorBlue,MOTOR_SHAFT_OFFSET,y,z-.0014);
+   ear.name=spec.name+' mounting tab';
+   // Motor hole Ø4.2; nominal fastener ~2.5mm to fit CAD Ø2.6 hole.
+   const washer=motorCylinder(mounting,.0022,.0006,motorScrew,MOTOR_SHAFT_OFFSET,y,z+.00015);
+   washer.name=spec.name+' screw washer at CAD hole';
+   motorCylinder(mounting,.00115,.0035,motorScrew,MOTOR_SHAFT_OFFSET,y,z+.0015);
  }
  for(let i=0;i<5;i++){
    const wirePath=new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-.019,(i-2)*.0013,-.026),
-    new THREE.Vector3(-.028,(i-2)*.0017,-.034),
-    new THREE.Vector3(-.034,(i-2)*.0017,-.039)
+    new THREE.Vector3(-.019,(i-2)*.0012,z-.013),
+    new THREE.Vector3(-.026,(i-2)*.0017,z-.020),
+    new THREE.Vector3(-.034,(i-2)*.0018,z-.024)
    ]);
-   solid(mounting,new THREE.TubeGeometry(wirePath,10,.00045,4,false),motorColors[i]);
+   solid(mounting,new THREE.TubeGeometry(wirePath,10,.0004,5,false),motorColors[i]);
  }
- return mounting;
+ mounting.userData={cadPart:spec.cadPart,shaftMM:spec.shaftOrigin.slice(0,2).map(v=>v*1000),
+   mountingHolesMM:[-8,17.5],axialFaceMM:z*1000};
+ // Rotating D-shaft is a child of the DRIVEN link; stationary housing is not.
+ const length=-z;
+ const shaft=motorCylinder(spec.driven,.0025,length,motorShaft,0,0,z/2);
+ shaft.scale.z=.64; // flatten cross-section across world Y, not along cylinder axis
+ shaft.name=spec.name+' moving output shaft';
+ // The 28BYJ nominal shaft projects ~10 mm; additional length is only
+ // a conceptual shaft coupling and must be manufactured/validated.
+ let coupling=null;
+ if(length>.010){
+   const extra=length-.010;
+   coupling=motorCylinder(spec.driven,.0032,extra,motorCoupler,0,0,-extra/2);
+   coupling.name=spec.name+' required extension coupler (unverified)';
+ }
+ return {mounting,shaft,coupling};
 }
-const motorBodies=[
- installMotor(scene,[0,0,.055],'J1 stepper'),
- installMotor(j1,[.120,0,.014],'J2 stepper'),
- installMotor(j2,[.100,0,.014],'J3 stepper')
+const motorMountSpecs=[
+ {name:'J1',cadPart:'base_lid',upstream:base,driven:j1,shaftOrigin:[0,0,.055],mountFace:-.019},
+ {name:'J2',cadPart:'link1',upstream:j1,driven:j2,shaftOrigin:[.120,0,.014],mountFace:-.014},
+ {name:'J3',cadPart:'link2',upstream:j2,driven:j3,shaftOrigin:[.100,0,.014],mountFace:-.014}
 ];
-const motorRotors=[j1,j2,j3].map((moving,i)=>{
- const shaft=motorCylinder(moving,.0025,.012,motorShaft,0,0,-.005);
- shaft.name='J'+(i+1)+' rotating motor shaft';
- return shaft;
-});
+const mountedMotors=motorMountSpecs.map(placeCadMotor);
 function showMotorGeometry(on){
- motorBodies.forEach(body=>body.visible=on);
- motorRotors.forEach(shaft=>shaft.visible=on);
+ for(const item of mountedMotors){
+   item.mounting.visible=on;item.shaft.visible=on;
+   if(item.coupling)item.coupling.visible=on;
+ }
  $('motor-description').textContent=on
- ?'Three illustrated geared steppers with visible output shafts and coloured cable leads. Each motor housing follows the preceding link, while its output shaft follows the rotating joint.'
- :'Stepper models hidden; only the supplied CAD parts remain visible.';
+ ?'Fixed to original CAD holes: Base lid (−8, ±17.5 mm), Link 1 (112, ±17.5 mm), Link 2 (92, ±17.5 mm). Motor shafts at X = 0 / 120 / 100 mm. Gold sleeves represent unverified shaft extensions.'
+ :'Motors hidden; original CAD parts remain unobstructed.';
 }
 $('show-steppers').addEventListener('change',e=>showMotorGeometry(e.target.checked));
 showMotorGeometry(true);

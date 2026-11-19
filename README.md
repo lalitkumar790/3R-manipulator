@@ -40,3 +40,25 @@ Simulation targets not validated against a real robot: motor-to-link coupling, b
 ## Pen-contact comparison modes
 
 The simulator has independent **Pen lift** (default; original virtual 12 mm prismatic lift) and **Fixed pen / no lift** modes. Both use the same 3R IK letter trajectories. Fixed mode commands zero pen lift at all points and leaves orange connector marks as the tool drags between strokes; blue is the intended lettering. The top-down preview is a drawing of the planned path, and the 3D view traces the simulated tip. This is **simulation only**: no pen-lift hardware is installed or assumed, and the physical Arduino writing command remains blocked until a lift mechanism is actually fitted and tested.
+
+
+## Motor installation registered to original STL cavities
+
+A motor placement pass uses the **full-resolution user-supplied STL cross sections**:
+
+| Fixed CAD part | Shaft axis (XY mm) | Two mounting hole centers (XY mm) | Motor support face |
+| --- | --- | --- | --- |
+| Base_Lid | (0,0) | (-8,-17.5),(-8,+17.5) | underside at z=36mm (base coordinates) |
+| Link1 | (120,0) | (112,-17.5),(112,+17.5) | underside at local z=0mm |
+| Link2 | (100,0) | (92,-17.5),(92,+17.5) | underside at local z=0mm |
+
+The nominal motor hole spacing is 35 mm, matching common 28BYJ-48 motors.
+Link1 / Link2 top-side recesses near x=110/90 mm are not equivalent to a
+19 mm-deep motor cavity: the bodies are visualized below the fixed links,
+with screw ears aligned to the actual small fixing holes. The 5mm output
+shafts are shown attached to downstream rotating joints. Gold sleeve
+sections are **conceptual couplers** across existing axial gaps
+(base ~9mm; links ~4mm). These couplers and all resulting
+clearances, screw compatibility, joint centers, motor torque, and backlash
+need physical verification, and have not been validated with motor CAD or
+a collision solver. The user STL does not include 28BYJ-48 motor solids.
