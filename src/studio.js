@@ -24,9 +24,9 @@ const edge=new THREE.EdgesGeometry(paper.geometry);const outline=new THREE.LineS
 const base=new THREE.Group();scene.add(base);
 const baseRingVisual=ringMesh(base,[.077,.070],[.050,.046],0,.036,baseMaterial);
 const baseLidVisual=ringMesh(base,[.077,.070],[.014,.014],.036,.007,steel);
-const baseHousing=solid(base,new THREE.CylinderGeometry(.024,.024,.018,48),mat(0x435f7e),0,0,.048);baseHousing.rotation.x=Math.PI/2;
+// Base motor housing is not included in the supplied STL files; do not invent one.
 function bolt(parent,x,y,z){const b=solid(parent,new THREE.CylinderGeometry(.003,.003,.001,12),mat(0xbdd4e4),x,y,z);b.rotation.x=Math.PI/2}
-for(const a of [0,Math.PI/2,Math.PI,3*Math.PI/2])bolt(base,.067*Math.cos(a),.058*Math.sin(a),.044);
+// Original base CAD already includes real mounting features; no added fake bolts.
 const j1=new THREE.Group();j1.position.set(0,0,.055);scene.add(j1);
 const j2=new THREE.Group();j2.position.set(.120,0,.014);j1.add(j2);
 const j3=new THREE.Group();j3.position.set(.100,0,.014);j2.add(j3);
@@ -50,12 +50,13 @@ const cadParts={
  link2:{parent:j2,color:0xe9b65c,replace:[link2Visual]},
  link3_penholder:{parent:j3,color:0x5bdfbc,replace:[link3Visual]}
 };
-attachCad(cadParts,(count,total,name)=>{
+attachCad(cadParts,(count,total,name,error)=>{
  const chip=document.getElementById('cad-status');
- if(chip)chip.textContent='CAD MESHES '+count+'/'+total;
-}).then(count=>{
+ if(chip)chip.textContent=error?'CAD LOAD ERROR':'CAD MESHES '+count+'/'+total;
+}).then(({loaded,errors})=>{
  const chip=document.getElementById('cad-status');
- if(chip)chip.textContent=count===5?'CAD MESHES READY':'CAD MESHES '+count+'/5';
+ if(chip)chip.textContent=loaded===5?'ORIGINAL CAD SHAPES':'CAD LOAD FAILED';
+ if(errors.length)document.getElementById('warning').textContent='Some CAD meshes could not load: '+errors.join(', ');
 });
 
 function stepper(group,z){
@@ -64,7 +65,8 @@ function stepper(group,z){
  solid(group,new THREE.CylinderGeometry(.008,.008,.006,30),steel,0,0,z-.005).rotation.x=Math.PI/2;
  return housing;
 }
-stepper(j1,0);stepper(j2,0);stepper(j3,0);
+// Hide illustrative box-shaped motors: user provided CAD has no motor meshes.
+// Avoid visually misrepresenting the submitted parts.
 for(const g of [j1,j2,j3]){
  solid(g,new THREE.CylinderGeometry(.0065,.0065,.002,32),steel,0,0,.011).rotation.x=Math.PI/2;
 }

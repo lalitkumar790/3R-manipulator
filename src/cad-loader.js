@@ -1,32 +1,35 @@
 import * as THREE from 'three';
+import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 const names=['base_ring','base_lid','link1','link2','link3_penholder'];
-async function decode(name){
- const response=await fetch('/cad/'+name+'.txt');
- if(!response.ok)throw new Error(name+' mesh is not yet published');
- const base64=(await response.text()).trim();
- const raw=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
- const ds=new DecompressionStream('deflate');
- const decoded=await new Response(new Blob([raw]).stream().pipeThrough(ds)).text();
- const {v,f}=JSON.parse(decoded);
- const pos=Float32Array.from(v,x=>x*.0001);
- const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setIndex(f);geo.computeVertexNormals();
- return geo;
-}
-/** Source CAD derived from original supplied STL, quadric-reduced and position-quantized for web transfer.
- * Returned geometry is for visualization, not a convex collision body or mechanical fit verification. */
+const source=new STLLoader();
+/**
+ * The five real STL source shapes are transformed to lightweight CAD-derived
+ * STL assets at build time by scripts/prepare-cad.mjs.
+ * The browser never needs a CAD upload or a decompression extension.
+ * Positions in source STL are in local part frames, already scaled to metres.
+ */
 export async function attachCad(parts,onProgress=()=>{}){
- let count=0;
+ let count=0,errors=[];
  await Promise.all(names.map(async name=>{
-  try{
-   const part=parts[name];if(!part)return;
-   const geometry=await decode(name);
-   const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:part.color,roughness:.42,metalness:.28,side:THREE.DoubleSide}));
-   mesh.castShadow=true;mesh.receiveShadow=true;
-   if(part.offset)mesh.position.set(...part.offset);
-   part.parent.add(mesh);
-   for(const old of part.replace||[])old.visible=false;
-   count++;onProgress(count,5,name);
-  }catch(err){console.warn('CAD asset:',name,err.message)}
+   try{
+     const part=parts[name];if(!part)throw new Error('No parent group');
+     const response=await fetch('/cad/'+name+'.stl',{cache:'force-cache'});
+     if(!response.ok)throw new Error('HTTP '+response.status);
+     const geometry=source.parse(await response.arrayBuffer());
+     geometry.computeBoundingBox();
+     const size=new THREE.Vector3();geometry.boundingBox.getSize(size);
+     if(!Number.isFinite(size.x)||size.x<.03||size.x>.25)
+       throw new Error('Invalid CAD geometry bounds');
+     const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({
+       color:part.color,metalness:.16,roughness:.68,side:THREE.DoubleSide
+     }));
+     mesh.castShadow=true;mesh.receiveShadow=true;
+     if(part.offset)mesh.position.set(...part.offset);
+     part.parent.add(mesh);
+     for(const old of part.replace||[])old.visible=false;
+     count++;onProgress(count,names.length,name);
+   }catch(e){errors.push(name+': '+e.message);console.error('CAD missing',name,e);onProgress(count,names.length,name,e)}
  }));
- return count;
+ if(errors.length)console.error('CAD assets failed:',errors.join('; '));
+ return {loaded:count,errors};
 }
