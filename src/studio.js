@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import './studio.css';
 import {planWriting,forward,inverse} from './writing.js';
+import {attachCad} from './cad-loader.js';
 const $=id=>document.getElementById(id);
 const host=$('three'),scene=new THREE.Scene();scene.background=new THREE.Color(0x0a182a);
 const camera=new THREE.PerspectiveCamera(43,1,.002,8);camera.up.set(0,0,1);camera.position.set(.37,-.33,.35);
@@ -21,8 +22,8 @@ const floor=new THREE.GridHelper(.68,34,0x2a5172,0x20364f);floor.rotation.x=Math
 const paper=solid(scene,new THREE.PlaneGeometry(.19,.12),mat(0xe2e9ef,.0,.95),.155,.035,.0003);
 const edge=new THREE.EdgesGeometry(paper.geometry);const outline=new THREE.LineSegments(edge,new THREE.LineBasicMaterial({color:0x88a9c5}));paper.add(outline);
 const base=new THREE.Group();scene.add(base);
-ringMesh(base,[.077,.070],[.050,.046],0,.036,baseMaterial);
-ringMesh(base,[.077,.070],[.014,.014],.036,.007,steel);
+const baseRingVisual=ringMesh(base,[.077,.070],[.050,.046],0,.036,baseMaterial);
+const baseLidVisual=ringMesh(base,[.077,.070],[.014,.014],.036,.007,steel);
 const baseHousing=solid(base,new THREE.CylinderGeometry(.024,.024,.018,48),mat(0x435f7e),0,0,.048);baseHousing.rotation.x=Math.PI/2;
 function bolt(parent,x,y,z){const b=solid(parent,new THREE.CylinderGeometry(.003,.003,.001,12),mat(0xbdd4e4),x,y,z);b.rotation.x=Math.PI/2}
 for(const a of [0,Math.PI/2,Math.PI,3*Math.PI/2])bolt(base,.067*Math.cos(a),.058*Math.sin(a),.044);
@@ -39,9 +40,24 @@ function linkGeometry(type){
  for(const [x,y,r] of holes){const p=new THREE.Path();p.absarc(x,y,r,0,Math.PI*2,true);s.holes.push(p)}
  const g=new THREE.ExtrudeGeometry(s,{depth:type===3?.022:.008,bevelEnabled:true,bevelThickness:.0005,bevelSize:.00035,bevelSegments:1,curveSegments:20,steps:1});g.computeVertexNormals();return g;
 }
-solid(j1,linkGeometry(1),blue);
-solid(j2,linkGeometry(2),amber);
-solid(j3,linkGeometry(3),mint);
+const link1Visual=solid(j1,linkGeometry(1),blue);
+const link2Visual=solid(j2,linkGeometry(2),amber);
+const link3Visual=solid(j3,linkGeometry(3),mint);
+const cadParts={
+ base_ring:{parent:base,offset:[0,0,0],color:0x516b85,replace:[baseRingVisual]},
+ base_lid:{parent:base,offset:[0,0,.036],color:0x8ba6b8,replace:[baseLidVisual]},
+ link1:{parent:j1,color:0x54aafb,replace:[link1Visual]},
+ link2:{parent:j2,color:0xe9b65c,replace:[link2Visual]},
+ link3_penholder:{parent:j3,color:0x5bdfbc,replace:[link3Visual]}
+};
+attachCad(cadParts,(count,total,name)=>{
+ const chip=document.getElementById('cad-status');
+ if(chip)chip.textContent='CAD MESHES '+count+'/'+total;
+}).then(count=>{
+ const chip=document.getElementById('cad-status');
+ if(chip)chip.textContent=count===5?'CAD MESHES READY':'CAD MESHES '+count+'/5';
+});
+
 function stepper(group,z){
  // Motoring envelope is illustrative; these bodies are not derived from original motor CAD.
  const housing=solid(group,new THREE.BoxGeometry(.032,.032,.020),mat(0x3b4b60,.45,.53),0,0,z-.017);
