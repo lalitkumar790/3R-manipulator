@@ -8,7 +8,7 @@ export class UnoBridge {
     this.port = null; this.reader = null; this.writer = null;
     this.connected = false; this.armed = false; this.calibrated = false;
     this.busy = false; this.abort = false; this.seq = 0; this.received = [];
-    this.estimatedQ = null; this.heartbeat = null; this.lastReply = 0; this.lastJog = [0,0,0]; this.penLiftInstalled = false; this.hello = false; this.fault = null;
+    this.estimatedQ = null; this.heartbeat = null; this.lastReply = 0; this.lastJog = [0,0,0]; this.penLiftInstalled = false; this.hello = false; this.fault = null; this.stepsPerRevolution = 4096;
   }
   async connect() {
     if (!('serial' in navigator)) throw new Error('Web Serial requires desktop Chrome or Edge on HTTPS.');
@@ -21,6 +21,7 @@ export class UnoBridge {
     await wait(1700); // Arduino Uno resets on USB serial opening
     await this.commandAndWait('HELLO','HELLO,3R-UNO,1',1200);
     if (!this.hello) throw new Error('Expected 3R Uno firmware protocol v1');
+    if (!this.boardVerified) { await this.disconnect(); throw new Error('Upload ULN2003 firmware. Existing sketch targets incompatible STEP/DIR drivers.'); }
     this.onStatus('USB connected. Align all joint zero marks, then press Set zero.');
   }
   async readLoop() {
@@ -39,7 +40,10 @@ export class UnoBridge {
               if (!line) continue;
               this.received.push(line); if (this.received.length > 80) this.received.shift();
               this.lastReply = performance.now();
-              if (line.startsWith('HELLO,3R-UNO,1')) { this.hello = true; this.penLiftInstalled = line.includes('PEN=1'); }
+              if (line.startsWith('HELLO,3R-UNO,1')) { this.hello = true; this.penLiftInstalled = line.includes('PEN=1');
+                this.boardVerified = line.includes('BOARD=ULN2003');
+                const stepField=line.split(',').find(x=>x.startsWith('STEPS='));
+                if(stepField){const n=Number(stepField.slice(6));if(Number.isFinite(n)&&n>0)this.stepsPerRevolution=n;} }
               if (line.startsWith('FAULT') || line.startsWith('ERR')) {
                 this.fault = line;
                 if (line.includes('TIMEOUT') || line.includes('DISARM')) this.armed = false;
@@ -50,7 +54,7 @@ export class UnoBridge {
                 const steps=chunks.slice(2,5).map(Number);
                 if(chunks.length===5 && steps.length===3 && steps.every(Number.isFinite)) {
                   // Estimates derived from firmware step counters, NOT measured shaft angles.
-                  this.estimatedQ=steps.map(n=>n*Math.PI*2/(200*16));
+                  this.estimatedQ=steps.map(n=>n*Math.PI*2/this.stepsPerRevolution);
                 }
               }
               if (line.startsWith('STATE')) this.onStatus(line);
@@ -63,7 +67,7 @@ export class UnoBridge {
       this.connected = false; this.armed = false; this.calibrated = false;
       clearInterval(this.heartbeat);
       this.abort = true;
-      this.onStatus('USB disconnected; verify hardware driver enable is OFF.');
+      this.onStatus('USB disconnected; coils should de-energize after watchdog timeout. Verify physical power state.');
     }
   }
   async send(line) {
@@ -98,7 +102,7 @@ export class UnoBridge {
     this.heartbeat = setInterval(() => {
       if (this.connected && this.armed && !this.busy) this.send('PING').catch(e=>this.onStatus('Heartbeat error: '+e.message));
     }, 250);
-    this.onStatus('ARMED — drivers enabled; keep clear of moving links.');
+    this.onStatus('ARMED — ULN2003 coils energized; keep clear of moving links.');
   }
   async jog(anglesRad) {
     if (!this.armed || !this.calibrated || this.busy) throw new Error('Connect, zero and arm first.');

@@ -1,81 +1,51 @@
-# Arduino Uno + Vercel digital twin hardware bridge
+# Three ULN2003 drivers + Arduino Uno
 
-The UI has **two distinct controls**: simulation writing and a physically armed USB execution.
-The cloud does **NOT** directly command motor drivers. /api/plan is stateless planning only.
-Live USB commands require a local, interactive Web Serial browser session (Chrome or Edge, HTTPS).
+**Driver-specific firmware:** `hardware/arduino_uno/three_r_uno/three_r_uno.ino`.
 
-## Wiring: external step/dir motor drivers ONLY
+Assumes **three 5 V 28BYJ-48 four-phase unipolar geared steppers**, one per ULN2003 board. A ULN2003 module is not a STEP/DIR driver: it needs **four coil control inputs per motor**.
 
-| Arduino Uno | External driver input |
-| --- | --- |
-| D2 / D3 | J1 STEP / DIR |
-| D4 / D5 | J2 STEP / DIR |
-| D6 / D7 | J3 STEP / DIR |
-| D8 | Shared ENABLE (assumes active LOW; check driver datasheet) |
-| D9 | Optional pen-lift hobby servo PWM |
-| GND | Shared logic ground with external drivers |
+## Wiring
 
-The steppers must be powered by a **separate, driver-appropriate motor supply**;
-never power them from Uno I/O or the USB 5 V line. Driver wiring (including
-active-level and current limits) varies among A4988, DRV8825, TMC and others.
-Provide a separate servo supply sized for peak current if using a pen servo;
-connect grounds appropriately. Fit a **physical emergency power cutoff** to
-motor power, travel stops and home switches before practical operation.
-Do not enable an unsecured network-to-motor relay.
+| Board | IN1 | IN2 | IN3 | IN4 | Motor |
+|---|---:|---:|---:|---:|---|
+| J1 ULN2003 | Uno D2 | D3 | D4 | D5 | 28BYJ-48 J1 |
+| J2 ULN2003 | Uno D6 | D7 | D8 | D9 | 28BYJ-48 J2 |
+| J3 ULN2003 | Uno D10 | D11 | D12 | D13 | 28BYJ-48 J3 |
 
-## Firmware setup
-1. Open `hardware/arduino_uno/three_r_uno/three_r_uno.ino` in Arduino IDE;
-   select Arduino Uno and its port.
-2. **Configure** microstepping, motor-to-joint gear ratios, driver-enable logic,
-   DIR polarity, physical joint limits, and pen servo geometry for your exact hardware.
-3. `PEN_LIFT_INSTALLED=false` intentionally prevents pen-down. Set true only
-   after installing and safely calibrating the pen-lift servo. Without this
-   actuator, the writing path cannot lift between letters.
-4. Flash, leave motor drivers disabled, align all three joints to documented
-   mechanical zero reference marks (this sketch has no homing sensors).
-5. Open the Vercel app in desktop Chrome or Edge over HTTPS. Click **Connect USB**,
-   grant serial access, and verify `HELLO,3R-UNO,1`.
-6. Click **Set zero** while the motors are disabled, then **Arm drivers**.
-   Use a tiny pen-up movement with the pen removed and workspace clear before trying a stroke.
-7. **Send writing to Uno** plans the text and transmits time-scheduled joint
-   target angles. Use **STOP** to disarm; the physical e-stop is authoritative.
+All three driver board **VCC/+** terminals → external **regulated 5 V supply** (assuming 5 V motors).
+All **GND/−** terminals → supply ground **and Arduino GND** (common reference).
+Each motor's 5-wire plug → its own ULN2003 board's motor socket.
+Optional hobby pen-lift servo signal → **Uno A0** (as digital pin), powered separately as appropriate and sharing GND. It is **disabled by default**.
 
-## Wire protocol, 115200 baud / newline ASCII
-Commands:
-- `HELLO` → `HELLO,3R-UNO,1`
-- `ZERO` → `OK,ZERO` (manual logical zero, not homing)
-- `ARM` → `OK,ARM`
-- `PING` → `OK,PING` (watchdog 1000 ms)
-- `Q,seq,j1_mdeg,j2_mdeg,j3_mdeg,lift_microns` → `ACK,Q,seq`
-- `STATUS` → `STATE,armed,step1,step2,step3`
-- `DISARM` → `OK,DISARM`
-- `STOP` → `OK,STOP`, requiring ZERO again
+**Do not power three motors from Uno 5 V or USB.** Verify the label on each motor: 12 V 28BYJ variants need a matching supply, not 5 V. Use a properly rated fused external supply and a **hardwired emergency cutoff**; the software STOP cannot replace a physical kill switch. Removing holding current by STOP/DISARM may allow a loaded arm to drop or drift: mechanically support it.
 
-Angles are relative to the manually established logical zero. They are *not*
-absolute measured joint positions. `ACK` only means a target was accepted;
-it does not guarantee the motor has reached that position.
-The firmware limits angles to ±150° and rates to ~400 steps/sec/axis
-in this initial prototype. Those are arbitrary conservative software settings,
-**not safe mechanical travel limits**. The USB host sends a 250ms heartbeat;
-firmware disables drivers after ~1s without traffic.
+## Motor math / calibration
 
-## API
-```http
-POST /api/plan
-Content-Type: application/json
+8-state half-step sequence energizes coil inputs IN1→IN4. 4096 half-steps/revolution is a nominal output-shaft value for many 28BYJ-48 units; some geartrains are approximately **4076**. Set `HALFSTEPS_PER_REV[]` by physical measurement, and `JOINT_GEAR_RATIO[]` for any added external reduction between output shaft and joint. Use `DIR_SIGN[]` to reverse axes after slow, pen-up tests.
 
-{"text":"HELLO","speedMmPerSecond":15}
-```
-Response contains an IK-validated array of `{x,y,q:[radians],lift,ink,dt}`.
-This endpoint performs no hardware actions. `GET /api/health` reports planning capability.
+UI step-position estimation assumes 4096 half-steps per joint revolution at 1:1 gearing until calibrated. It is **not an encoder measurement**. The controller is open-loop, and can lose steps under load.
 
-## Known limitations
-- Three Uno-controlled stepper axes are open-loop without step encoders; STEP
-  counters cannot detect lost steps or collisions. A trustworthy digital twin
-  needs homing sensors or encoders + calibration of joint offsets.
-- Joints and motor coupling remain estimated from STL hole locations (120/100/60 mm).
-- USB serial needs a user-present browser. Background remote automation from
-  Vercel would need a secure dedicated local agent with authentication, authorization
-  and independent safety interlocks; intentionally not offered here.
-- Plan timestamps are not a guarantee of motor following; motion queueing, acceleration,
-  homing, collision checking and PID/driver configuration remain future tasks.
+A common 28BYJ-48 is low-cost but may be too weak or slow for a long 3R link + pen force. Test torque, backlash, sag, and drawing contact with each motor actually mounted before accepting any trajectory.
+
+## Setup
+
+1. Wire and check **one** driver/motor first with motor power off. Keep the arm mechanically supported.
+2. Upload the Uno sketch; default `PEN_LIFT_INSTALLED=false` blocks physical pen-down writing.
+3. Verify winding sequence at low speed; check rotation sense, backlash, heat, and output-shaft travel against the joint CAD. Configure motor ratios, physical limits, and pen lift before attaching the other motors.
+4. Connect the live simulator in desktop Chrome/Edge: **Connect USB → Set zero → Arm → Jog ≤5°** (pen removed).
+5. For full writing, install a real lift mechanism, calibrate up/down and safety interlocks, then enable pen-lift in firmware and test isolated strokes.
+6. Firmware watchdog de-energizes all coils after 1s without heartbeat. A detached or overloaded arm can move while de-energized; do not rely solely on that behavior.
+
+## USB protocol (115200 baud, ASCII newline)
+
+`HELLO` returns `HELLO,3R-UNO,1,PEN=0,BOARD=ULN2003,STEPS=4096` unless pen lift enabled. The browser refuses to connect using an older STEP/DIR sketch. Other commands stay compatible:
+
+`ZERO`, `ARM`, `Q,seq,j1_mdeg,j2_mdeg,j3_mdeg,lift_microns`, `STATUS`, `PING`, `DISARM`, `STOP`.
+
+`STATE,armed,step1,step2,step3` is the commanded **coil-step counter**, not true shaft position; feedback of physical angles needs encoders. ZERO is manual declaration, not homing. `ACK,Q,seq` acknowledges a target, not completed motion.
+
+## Planning API
+
+`POST /api/plan` with JSON `{"text":"HELLO","speedMmPerSecond":15}` returns IK-validated joint waypoints; the Vercel server does **not** control your serial port. Only your local browser session (Web Serial) can command the Uno after a manual permission grant.
+
+The existing 3R URDF/MJCF joint geometry is provisional; hardware is not validated against its CAD-derived visual mesh yet.
