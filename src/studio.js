@@ -136,3 +136,95 @@ function frame(t){requestAnimationFrame(frame);const dt=Math.min(.08,Math.max(0,
 }
 const resize=new ResizeObserver(()=>{const r=host.getBoundingClientRect();if(!r.width||!r.height)return;camera.aspect=r.width/r.height;camera.updateProjectionMatrix();renderer.setSize(r.width,r.height)});resize.observe(host);
 updateSlider();requestAnimationFrame(frame);
+
+
+// Local hardware bridge: a remote HTTP API cannot operate a USB serial port.
+let uno = null;
+const hw = id => document.getElementById(id);
+function hwStatus(message, error=false) {
+  hw('uno-status').textContent = message;
+  hw('uno-status').classList.toggle('error',error);
+  hwUpdate();
+}
+function hwUpdate() {
+  const connected = !!uno?.connected, armed = !!uno?.armed, calibrated = !!uno?.calibrated, busy=!!uno?.busy;
+  hw('hardware-badge').textContent = connected ? armed ? 'ARMED' : 'USB CONNECTED' : 'DISCONNECTED';
+  hw('uno-connect').textContent = connected ? 'Disconnect USB' : 'Connect USB';
+  hw('uno-connect').disabled = busy;
+  hw('uno-zero').disabled = !connected || armed || busy;
+  hw('uno-arm').disabled = !connected || !calibrated || armed || busy;
+  hw('uno-jog').disabled = !connected || !armed || busy;
+  hw('uno-write').disabled = !connected || !armed || busy;
+  hw('uno-disarm').disabled = !connected || !armed || busy;
+  hw('uno-stop').disabled = !connected;
+}
+hw('uno-connect').onclick = async () => {
+  const button=hw('uno-connect'); button.disabled=true;
+  try {
+    if (uno?.connected) { await uno.disconnect(); uno=null; hwStatus('USB disconnected.'); }
+    else {
+      const {UnoBridge}=await import('./uno-bridge.js');
+      uno = new UnoBridge(msg=>hwStatus(msg,msg.startsWith('ERR')||msg.startsWith('FAULT')));
+      await uno.connect();
+      hwStatus('Uno connected. Pen lift installed: '+(uno.penLiftInstalled?'YES':'NO')+'. Set mechanical zero before arming.');
+    }
+  } catch(e) {hwStatus('Connect failed: '+e.message,true)}
+  finally {button.disabled=false;hwUpdate()}
+};
+hw('uno-zero').onclick = async () => {
+  if(!confirm('With motor drivers DISABLED, have you physically aligned all 3 joints to the documented zero marks? This is NOT automatic homing.'))return;
+  try {await uno.setZero();hwStatus('Logical joint zero set. This is not encoder feedback or homing.')}
+  catch(e){hwStatus(e.message,true)}finally{hwUpdate()}
+};
+hw('uno-arm').onclick = async () => {
+  if(!confirm('Physical emergency power cutoff fitted, workspace clear, motor drivers configured and zero alignment verified? Enable the external motor drivers?'))return;
+  try{await uno.arm();hwStatus('Drivers armed. Perform only a small pen-up jog first.')}
+  catch(e){hwStatus(e.message,true)}finally{hwUpdate()}
+};
+hw('uno-jog').onclick = async () => {
+  try {
+    await uno.jog(targetQ);
+    hwStatus('Pen-up jog command accepted. No position encoder is connected.');
+  } catch(e) {hwStatus(e.message,true)}
+  finally {hwUpdate()}
+};
+hw('uno-disarm').onclick = async () => {
+  try{await uno.disarm();hwStatus('Drivers disarmed.')}
+  catch(e){hwStatus(e.message,true)}finally{hwUpdate()}
+};
+hw('uno-stop').onclick = async () => {
+  stop();
+  try{await uno.stop();hwStatus('STOP sent. Verify driver power physically. Set zero again before arming.')}
+  catch(e){hwStatus('STOP transmit failed: '+e.message+'. USE PHYSICAL E-STOP.',true)}
+  finally{hwUpdate()}
+};
+hw('uno-write').onclick = async () => {
+  if(!uno?.armed || uno.busy)return;
+  if(!uno.penLiftInstalled){hwStatus('Uno reports no pen lift. Firmware must be configured and tested before pen-down writing.',true);return;}
+  if(!confirm('Send this writing plan to the REAL robot? Keep one hand near the physical emergency power cutoff. The arm is open-loop and axes are not calibrated.'))return;
+  try {
+    hw('uno-progress').textContent='Validating entire trajectory…';
+    const response=await fetch('/api/plan',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:hw('message').value,speedMmPerSecond:Number(hw('speed').value)})
+    });
+    const payload=await response.json();
+    if(!response.ok)throw new Error(payload.error||'Planning request failed');
+    hwStatus('Validated '+payload.points.length+' target points. Sending to Uno...');
+    beginWriting(); // Digital twin playback; NOT measured robot feedback.
+    hwUpdate();
+    await uno.run(payload.points,(done,total)=>{
+      hw('uno-progress').textContent='Target stream '+Math.round(done/total*100)+'% · '+done+'/'+total;
+    });
+    hwStatus('Target stream finished. Motion is NOT independently verified (open-loop steppers).');
+  } catch(e) {
+    stop(); hwStatus('Hardware execution stopped: '+e.message,true);
+  } finally { hwUpdate(); }
+};
+const oldPause=hw('pause').onclick;
+hw('pause').onclick=(e)=>{
+  if(uno?.busy){ hw('uno-stop').click(); hwStatus('Physical execution cannot be paused safely; STOP requested.');return; }
+  oldPause?.(e);
+};
+window.addEventListener('pagehide',()=>{if(uno?.connected)uno.send('STOP').catch(()=>{});});
+hwUpdate();
