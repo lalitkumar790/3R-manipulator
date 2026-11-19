@@ -14,13 +14,13 @@ Joint origin Z estimates: 55, 69, 83 mm; pen tip relative to Link 3 z=-82 mm; do
 
 ## Vercel browser app
 
-- No CAD upload prompt; automatic CAD-informed procedural visual parts with mounting holes.
+- No CAD upload prompt. All five provided STL parts are automatically loaded as CAD-derived triangle meshes (decimated and quantized for small download size).
 - Enter text (A–Z, 0–9 and basic punctuation), plan each stroke with exact planar 3R inverse kinematics.
 - Pen-up / pen-down auxiliary prismatic axis between strokes; blue ink path uses actual rendered pen-tip pose.
 - Optional MuJoCo WASM model using `src/writing-scene.xml`, which includes 3 hinge joints, pen-slide axis, actuators, inertias, contact proxy and writing surface.
 - Vercel builds Vite and serves the application from the `main` branch.
 
-**CAD fidelity warning:** The STL meshes originally supplied by the user are still not published as GitHub files. The browser arm uses procedurally reconstructed visual shapes informed by those CAD meshes; it does **not** render the original triangle data. The original source STLs remain available in the ChatGPT conversation's downloadable bundle.
+**CAD fidelity warning:** Browser meshes were generated from the supplied original STL surfaces, reduced through quadric decimation and 0.1 mm vertex quantization. They are approximations of the original triangulations, not validated motor assemblies or collision meshes. Original full-resolution STLs are retained in the conversation bundle; GitHub hosts the lightweight derived assets.
 
 ## Local simulation
 
