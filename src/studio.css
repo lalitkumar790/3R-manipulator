@@ -7,3 +7,14 @@
 .emergency:hover{background:#b22a2a}
 .hardware .message{word-break:break-word}
 .hardware a{font-size:11px}
+
+.pen-mode{margin-top:14px;background:#0a192e;border:1px solid #304d6e;border-radius:10px;padding:12px}
+.mode-option{display:flex!important;align-items:center;gap:10px;padding:10px 8px;margin:5px 0!important;cursor:pointer;border-radius:8px;background:#152b45}
+.mode-option input{accent-color:#69c6ff;flex:0 0 auto}
+.mode-option span{display:flex;flex-direction:column;gap:3px}
+.mode-option strong{font-size:12px;color:#e7f1ff}
+.mode-option small{font-size:10px;color:#a7bad0;font-weight:normal}
+.pen-mode-hint{font-size:10px;color:#c3d2e7;line-height:1.5;margin-top:8px}
+.preview-title{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px;font-size:12px;font-weight:700;margin:15px 0 8px}
+.preview-title span{font-weight:400;color:#a5bdd4;font-size:10px}
+#writing-preview{display:block;width:100%;height:auto;border:1px solid #45607c;border-radius:8px;background:#f1f4f8}

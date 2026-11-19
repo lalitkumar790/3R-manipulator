@@ -78,18 +78,66 @@ const tipTmp=new THREE.Vector3();
 function actualTip(){scene.updateMatrixWorld(true);return tipObject.getWorldPosition(tipTmp.clone());}
 let targetQ=[-.85,1.4,-.55],displayQ=[...targetQ],targetLift=.012,actualLift=.012,physics=null,physicsTime=0,playing=false,paused=false,plan=null,planIndex=0,planClock=0,inkPoints=[],line=null,previous=null,slowAccumulator=0;
 const inkMaterial=new THREE.LineBasicMaterial({color:0x174d9b,linewidth:2});
+const dragMaterial=new THREE.LineBasicMaterial({color:0xe58b42,linewidth:2});
+let dragPoints=[], dragLine=null, lastTravelMode=null;
+const penMode=()=>document.querySelector('input[name="pen-mode"]:checked')?.value||'lift';
+const fixedPen=()=>penMode()==='fixed';
+function renderWritingPreview(planned){
+ const canvas=$('writing-preview');if(!canvas)return;
+ const ctx=canvas.getContext('2d');const W=canvas.width,H=canvas.height;
+ ctx.fillStyle='#f1f4f8';ctx.fillRect(0,0,W,H);
+ ctx.strokeStyle='#d1dce8';ctx.lineWidth=1;ctx.strokeRect(9,9,W-18,H-18);
+ if(!planned?.points?.length){ctx.fillStyle='#66758a';ctx.font='20px sans-serif';ctx.fillText('Enter text and click Plan & write',30,80);return}
+ const pts=planned.points,xx=pts.map(p=>p.x),yy=pts.map(p=>p.y);
+ const xMin=Math.min(...xx),xMax=Math.max(...xx),yMin=Math.min(...yy),yMax=Math.max(...yy);
+ const scale=Math.min((W-66)/Math.max(.012,xMax-xMin),(H-50)/Math.max(.018,yMax-yMin));
+ const xOff=(W-(xMax-xMin)*scale)/2,yOff=(H-(yMax-yMin)*scale)/2;
+ const X=p=>xOff+(p.x-xMin)*scale,Y=p=>H-(yOff+(p.y-yMin)*scale);
+ ctx.lineWidth=2.1;ctx.lineJoin='round';ctx.lineCap='round';
+ for(let i=1;i<pts.length;i++){
+   const point=pts[i],prev=pts[i-1];
+   const dragging=fixedPen()&&!point.ink;
+   if(!point.ink&&!fixedPen())continue;
+   ctx.beginPath();ctx.moveTo(X(prev),Y(prev));ctx.lineTo(X(point),Y(point));
+   ctx.strokeStyle=dragging?'#db813a':'#215eaf';ctx.stroke();
+ }
+ ctx.font='14px sans-serif';ctx.fillStyle='#4d5e71';
+ ctx.fillText(fixedPen()?'Orange lines = marks made when moving between letters':'Only pen-down strokes are inked',18,H-11);
+}
+
 const sliders=[];
 for(let i=0;i<3;i++){const d=document.createElement('div');d.className='ctrl';d.innerHTML='<label class="slider-head"><span>J'+(i+1)+' · '+['Base','Elbow','Pen holder'][i]+'</span><span class="val">0°</span></label>';const input=document.createElement('input');input.type='range';input.min=-180;input.max=180;input.step=.5;input.setAttribute('aria-label','Joint '+(i+1));input.addEventListener('input',()=>{playing=false;plan=null;targetQ[i]=Number(input.value)*Math.PI/180;targetLift=.012;setStatus('MANUAL CONTROL')});d.append(input);$('joint-controls').append(d);sliders.push({input,value:d.querySelector('.val')})}
 function updateSlider(){sliders.forEach((s,i)=>{s.input.value=(targetQ[i]*180/Math.PI).toFixed(1);s.value.textContent=(targetQ[i]*180/Math.PI).toFixed(1)+'°'})}
 function setStatus(text){$('status').textContent=text}
 function message(text,isError=false){$('warning').textContent=text;$('warning').classList.toggle('error',isError)}
 function setJointDisplay(q,lift){j1.rotation.z=q[0];j2.rotation.z=q[1];j3.rotation.z=q[2];penCarrier.position.z=lift;}
-function putInk(p){if(!Number.isFinite(p.x)||p.z>.0035)return;const a=new THREE.Vector3(p.x,p.y,.0014);if(previous&&previous.distanceTo(a)>.008)previous=null;if(previous){inkPoints.push([previous.clone(),a]);const pts=inkPoints.flat();if(line){scene.remove(line);line.geometry.dispose()}line=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts),inkMaterial);scene.add(line)}previous=a}
-function clearInk(){inkPoints=[];previous=null;if(line){scene.remove(line);line.geometry.dispose();line=null}}
-function stop(){playing=false;paused=false;plan=null;targetLift=.012;$('pause').textContent='Pause';$('progress').textContent='IDLE';setStatus(physics?'MUJOCO READY':'KINEMATICS READY')}
+function putInk(p,isTravel=false){
+ if(!Number.isFinite(p.x)||p.z>.0035)return;
+ const a=new THREE.Vector3(p.x,p.y,.0014);
+ if(previous && previous.distanceTo(a)>.008)previous=null;
+ if(previous){
+   const target=isTravel?dragPoints:inkPoints;
+   target.push([previous.clone(),a]);
+   const old=isTravel?dragLine:line;
+   if(old){scene.remove(old);old.geometry.dispose()}
+   const next=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(target.flat()),isTravel?dragMaterial:inkMaterial);
+   scene.add(next);if(isTravel)dragLine=next;else line=next;
+ }
+ previous=a;
+}
+function clearInk(){inkPoints=[];dragPoints=[];previous=null;if(line){scene.remove(line);line.geometry.dispose();line=null}if(dragLine){scene.remove(dragLine);dragLine.geometry.dispose();dragLine=null}}
+function stop(){playing=false;paused=false;plan=null;targetLift=fixedPen()?0:.012;$('pause').textContent='Pause';$('progress').textContent='IDLE';setStatus(physics?'MUJOCO READY':'KINEMATICS READY')}
 function beginWriting(){
  stop();clearInk();
- try{plan=planWriting($('message').value,Number($('speed').value)/1000);planIndex=0;planClock=0;playing=true;paused=false;setStatus('WRITING');message(plan.strokes+' distinct pen-down strokes · planned '+plan.estimatedDuration.toFixed(1)+' s, '+plan.points.length+' trajectory samples. Virtual pen lift separates strokes.');$('progress').textContent='0%'}
+ try{
+   plan=planWriting($('message').value,Number($('speed').value)/1000);
+   if(fixedPen())plan.points=plan.points.map(point=>({...point,lift:0}));
+   renderWritingPreview(plan);
+   planIndex=0;planClock=0;playing=true;paused=false;previous=null;
+   setStatus(fixedPen()?'WRITING · PEN FIXED':'WRITING · PEN LIFT');
+   message(plan.strokes+' strokes · '+plan.estimatedDuration.toFixed(1)+' s · '+plan.points.length+' waypoints. '+(fixedPen()?'No pen lift: orange connector paths are also drawn.':'Virtual pen lifts between strokes.'));
+   $('progress').textContent='0%'
+ }
  catch(e){plan=null;message(e.message,true);setStatus('PLANNING ERROR')}
 }
 $('write').onclick=beginWriting;$('pause').onclick=()=>{if(!playing)return;paused=!paused;$('pause').textContent=paused?'Resume':'Pause';setStatus(paused?'PAUSED':'WRITING')};
@@ -97,6 +145,13 @@ $('clear').onclick=clearInk;$('home').onclick=()=>{stop();targetQ=[-.85,1.4,-.55
 $('reset').onclick=()=>{stop();clearInk();targetQ=[-.85,1.4,-.55];updateSlider();physics?.reset();physicsTime=0;message('Reset to the default joint configuration.')};
 $('speed').oninput=e=>$('speed-label').textContent=e.target.value+' mm/s';
 $('message').oninput=e=>$('count').textContent=e.target.value.length+'/24';
+document.querySelectorAll('input[name="pen-mode"]').forEach(radio=>radio.addEventListener('change',()=>{
+ if(playing)stop();clearInk();
+ $('pen-mode-hint').textContent=fixedPen()?'No-lift visualization: pen stays at the paper level throughout; travel paths leave visible orange marks. Simulation only.':'Virtual pen lift (12 mm) between strokes. No physical lift is installed.';
+ try{const preview=planWriting($('message').value,Number($('speed').value)/1000);renderWritingPreview(preview)}catch{renderWritingPreview(null)}
+ message(fixedPen()?'Fixed pen selected. The next simulation will leave travel marks.':'Virtual pen-lift simulation selected.');
+}));
+renderWritingPreview(null);
 $('physics').onclick=async()=>{
  const button=$('physics');if(physics){physics.dispose();physics=null;button.textContent='Start MuJoCo physics';$('engine-badge').textContent='KINEMATIC';$('engine-info').textContent='Kinematic mode. Turn on physics to see motor following and dynamics.';return}
  button.disabled=true;button.textContent='Loading physics…';
@@ -114,9 +169,9 @@ function animatePlan(dt){
  const t=Math.min(1,planClock/Math.max(cur.dt,.00001));
  targetQ=cur.q.map((q,i)=>prev.q[i]+(q-prev.q[i])*t);
  targetLift=prev.lift+(cur.lift-prev.lift)*t;
- if(!cur.ink)previous=null;
+ if(!cur.ink && !fixedPen())previous=null;
  }
- if(planIndex>=plan.points.length){const total=plan.points.length;stop();$('progress').textContent='COMPLETE · '+total+' steps';message('Writing motion completed. The rendered ink represents the simulated pen-tip contact path.')}
+ if(planIndex>=plan.points.length){const total=plan.points.length;stop();$('progress').textContent='COMPLETE · '+total+' steps';message(fixedPen()?'Writing finished: orange marks show unwanted pen dragging between strokes.':'Writing finished: only pen-down strokes are inked.')}
  else $('progress').textContent=Math.round(100*planIndex/plan.points.length)+'%';
  updateSlider();
 }
@@ -142,7 +197,10 @@ function frame(t){requestAnimationFrame(frame);const dt=Math.min(.08,Math.max(0,
  const p=actualTip();$('tip').textContent='x '+(p.x*1000).toFixed(1)+' · y '+(p.y*1000).toFixed(1)+' · z '+(p.z*1000).toFixed(1)+' mm';
  $('feedback').textContent=displayQ.map((q,i)=>'J'+(i+1)+' '+(q*180/Math.PI).toFixed(1)+'°').join(' · ');
  $('lift').textContent=(actualLift*1000).toFixed(1)+' mm';
- if(playing&&!paused&&plan&&planIndex>0&&plan.points[Math.min(planIndex,plan.points.length-1)].ink&&actualLift<.0035)putInk(p);else previous=null;
+ const currentPoint=plan?.points[Math.min(planIndex,plan.points.length-1)];
+ if(playing&&!paused&&currentPoint&&planIndex>0&&actualLift<.0035&&(currentPoint.ink||fixedPen())){
+   putInk(p,!currentPoint.ink);
+ }else previous=null;
  controls.update();renderer.render(scene,camera)
 }
 const resize=new ResizeObserver(()=>{const r=host.getBoundingClientRect();if(!r.width||!r.height)return;camera.aspect=r.width/r.height;camera.updateProjectionMatrix();renderer.setSize(r.width,r.height)});resize.observe(host);

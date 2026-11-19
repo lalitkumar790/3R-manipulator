@@ -35,3 +35,8 @@ python -m pytest tests/ -q
 ## Engineering limitations
 
 Simulation targets not validated against a real robot: motor-to-link coupling, bearing depths, actual pen insertion/length, torque and velocity limits, calibration, contact-force sensing, mesh-mesh collisions and clearance. The physical model is a research prototype, **not** a validated assembled robot or handwriting-trained policy. ROS bridge and motor electronics must be integrated separately.
+
+
+## Pen-contact comparison modes
+
+The simulator has independent **Pen lift** (default; original virtual 12 mm prismatic lift) and **Fixed pen / no lift** modes. Both use the same 3R IK letter trajectories. Fixed mode commands zero pen lift at all points and leaves orange connector marks as the tool drags between strokes; blue is the intended lettering. The top-down preview is a drawing of the planned path, and the 3D view traces the simulated tip. This is **simulation only**: no pen-lift hardware is installed or assumed, and the physical Arduino writing command remains blocked until a lift mechanism is actually fitted and tested.
