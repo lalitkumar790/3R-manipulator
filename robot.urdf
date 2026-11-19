@@ -1,12 +1,16 @@
 <?xml version="1.0"?>
 <robot name="three_r_writing_manipulator">
-<link name="base_link"/>
-<link name="link1"><visual><geometry><mesh filename="package://three_r_sim/meshes/link1.stl" scale=".001 .001 .001"/></geometry></visual><inertial><origin xyz=".065 0 .004"/><mass value=".2"/><inertia ixx=".0007" ixy="0" ixz="0" iyy=".0007" iyz="0" izz=".0002"/></inertial></link>
-<link name="link2"><visual><geometry><mesh filename="package://three_r_sim/meshes/link2.stl" scale=".001 .001 .001"/></geometry></visual><inertial><origin xyz=".055 0 .004"/><mass value=".16"/><inertia ixx=".0004" ixy="0" ixz="0" iyy=".0004" iyz="0" izz=".00015"/></inertial></link>
-<link name="link3"><visual><geometry><mesh filename="package://three_r_sim/meshes/link3_penholder.stl" scale=".001 .001 .001"/></geometry></visual><inertial><origin xyz=".035 0 .011"/><mass value=".10"/><inertia ixx=".00016" ixy="0" ixz="0" iyy=".00016" iyz="0" izz=".00007"/></inertial></link>
-<joint name="joint1" type="revolute"><parent link="base_link"/><child link="link1"/><origin xyz="0 0 .055"/><axis xyz="0 0 1"/><limit lower="-3.14159" upper="3.14159" effort="1.5" velocity="2"/></joint>
-<joint name="joint2" type="revolute"><parent link="link1"/><child link="link2"/><origin xyz=".120 0 .014"/><axis xyz="0 0 1"/><limit lower="-3.14159" upper="3.14159" effort="1.1" velocity="2"/></joint>
-<joint name="joint3" type="revolute"><parent link="link2"/><child link="link3"/><origin xyz=".100 0 .014"/><axis xyz="0 0 1"/><limit lower="-3.14159" upper="3.14159" effort=".7" velocity="2"/></joint>
+<link name="base_link"><visual><geometry><mesh filename="package://three_r_sim/meshes/base_ring.stl" scale=".001 .001 .001"/></geometry></visual><visual><origin xyz="0 0 .036"/><geometry><mesh filename="package://three_r_sim/meshes/base_lid.stl" scale=".001 .001 .001"/></geometry></visual></link>
+<link name="link1"><visual><origin xyz="0 0 .008" rpy="3.1415926536 0 0"/><geometry><mesh filename="package://three_r_sim/meshes/link1.stl" scale=".001 .001 .001"/></geometry></visual><inertial><origin xyz=".066559 .000015 .004189"/><mass value=".040285"/><inertia ixx=".000006469" ixy="0" ixz="0" iyy=".000073280" iyz="0" izz=".000079321"/></inertial></link>
+<link name="link2"><visual><origin xyz="0 0 .008" rpy="3.1415926536 0 0"/><geometry><mesh filename="package://three_r_sim/meshes/link2.stl" scale=".001 .001 .001"/></geometry></visual><inertial><origin xyz=".054871 .000017 .004214"/><mass value=".035488"/><inertia ixx=".000005623" ixy="0" ixz="0" iyy=".000047351" iyz="0" izz=".000052598"/></inertial></link>
+<link name="link3"><visual><origin xyz="0 0 .008" rpy="3.1415926536 0 0"/><geometry><mesh filename="package://three_r_sim/meshes/link3_penholder.stl" scale=".001 .001 .001"/></geometry></visual><inertial><origin xyz=".041044 -.000018 .000151"/><mass value=".032364"/><inertia ixx=".000003738" ixy="0" ixz="0" iyy=".000021421" iyz="0" izz=".000022789"/></inertial></link>
+<joint name="joint1" type="revolute"><parent link="base_link"/><child link="link1"/><origin xyz="0 0 .055"/><axis xyz="0 0 1"/><limit lower="-3.14159" upper="3.14159" effort=".0343" velocity=".184"/></joint>
+<joint name="joint2" type="revolute"><parent link="link1"/><child link="link2"/><origin xyz=".120 0 .014"/><axis xyz="0 0 1"/><limit lower="-3.14159" upper="3.14159" effort=".0343" velocity=".184"/></joint>
+<joint name="joint3" type="revolute"><parent link="link2"/><child link="link3"/><origin xyz=".100 0 .014"/><axis xyz="0 0 1"/><limit lower="-3.14159" upper="3.14159" effort=".0343" velocity=".184"/></joint>
+<link name="motor2_housing"><inertial><origin xyz="0 0 0"/><mass value=".032"/><inertia ixx=".00000253" ixy="0" ixz="0" iyy=".00000253" iyz="0" izz=".00000314"/></inertial></link>
+<joint name="motor2_fixed" type="fixed"><parent link="link1"/><child link="motor2_housing"/><origin xyz=".112 0 -.0095"/></joint>
+<link name="motor3_housing"><inertial><origin xyz="0 0 0"/><mass value=".032"/><inertia ixx=".00000253" ixy="0" ixz="0" iyy=".00000253" iyz="0" izz=".00000314"/></inertial></link>
+<joint name="motor3_fixed" type="fixed"><parent link="link2"/><child link="motor3_housing"/><origin xyz=".092 0 -.0095"/></joint>
 <link name="pen"><inertial><origin xyz="0 0 -.03"/><mass value=".018"/><inertia ixx=".00001" ixy="0" ixz="0" iyy=".00001" iyz="0" izz=".000003"/></inertial></link>
 <joint name="pen_lift" type="prismatic"><parent link="link3"/><child link="pen"/><origin xyz=".060 0 0"/><axis xyz="0 0 1"/><limit lower="0" upper=".012" effort="8" velocity=".05"/></joint>
 <link name="pen_tip"/><joint name="pen_tip_fixed" type="fixed"><parent link="pen"/><child link="pen_tip"/><origin xyz="0 0 -.082"/></joint>

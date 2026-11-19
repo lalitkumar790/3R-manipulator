@@ -1,21 +1,24 @@
 <mujoco model="3r-writing-manipulator">
   <compiler angle="radian" autolimits="true"/>
   <option timestep="0.002" integrator="implicitfast" gravity="0 0 -9.81"/>
-  <default><joint damping=".025" armature=".0002"/><geom friction=".8 .005 .0001"/></default>
+  <!-- Drivetrain damping is provisional and unmeasured. -->
+  <default><joint damping=".001" armature=".00002"/><geom friction=".8 .005 .0001"/></default>
   <worldbody>
     <geom name="desk" type="plane" pos="0 0 0" size=".6 .6 .01"/>
     <body name="base"><geom type="cylinder" size=".06 .02" pos="0 0 .021" contype="0" conaffinity="0"/>
       <body name="link1" pos="0 0 .055">
-        <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".04" armature=".001"/>
-        <inertial pos=".065 0 .004" mass=".20" diaginertia=".0007 .0007 .0002"/>
+        <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".002" armature=".00002"/>
+        <inertial pos=".066559 .000015 .004189" mass=".040285" diaginertia=".000006469 .000073280 .000079321"/>
         <geom name="link1_collision" type="capsule" fromto="0 0 .004 .120 0 .004" size=".010" contype="1" conaffinity="1"/>
+        <body name="joint2_motor_housing" pos=".112 0 -.0095"><inertial pos="0 0 0" mass=".032" diaginertia=".00000253 .00000253 .00000314"/></body>
         <body name="link2" pos=".120 0 .014">
-          <joint name="joint2" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".025" armature=".0006"/>
-          <inertial pos=".055 0 .004" mass=".16" diaginertia=".0004 .0004 .00015"/>
+          <joint name="joint2" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".0015" armature=".00002"/>
+          <inertial pos=".054871 .000017 .004214" mass=".035488" diaginertia=".000005623 .000047351 .000052598"/>
           <geom name="link2_collision" type="capsule" fromto="0 0 .004 .100 0 .004" size=".010" contype="1" conaffinity="1"/>
+          <body name="joint3_motor_housing" pos=".092 0 -.0095"><inertial pos="0 0 0" mass=".032" diaginertia=".00000253 .00000253 .00000314"/></body>
           <body name="link3" pos=".100 0 .014">
-            <joint name="joint3" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".015" armature=".0003"/>
-            <inertial pos=".035 0 .011" mass=".10" diaginertia=".00016 .00016 .00007"/>
+            <joint name="joint3" type="hinge" axis="0 0 1" range="-3.14159 3.14159" damping=".0010" armature=".00001"/>
+            <inertial pos=".041044 -.000018 .000151" mass=".032364" diaginertia=".000003738 .000021421 .000022789"/>
             <geom name="link3_collision" type="capsule" fromto="0 0 .011 .070 0 .011" size=".009" contype="1" conaffinity="1"/>
             <body name="pen" pos=".060 0 0">
               <joint name="pen_lift" type="slide" axis="0 0 1" range="0 .012" damping=".15"/>
@@ -30,9 +33,9 @@
     </body>
   </worldbody>
   <actuator>
-    <position name="motor1" joint="joint1" kp="7" ctrlrange="-3.14159 3.14159" forcerange="-1.5 1.5"/>
-    <position name="motor2" joint="joint2" kp="5" ctrlrange="-3.14159 3.14159" forcerange="-1.1 1.1"/>
-    <position name="motor3" joint="joint3" kp="3" ctrlrange="-3.14159 3.14159" forcerange="-.7 .7"/>
+    <position name="motor1" joint="joint1" kp=".7" ctrlrange="-3.14159 3.14159" forcerange="-.0343 .0343"/>
+    <position name="motor2" joint="joint2" kp=".5" ctrlrange="-3.14159 3.14159" forcerange="-.0343 .0343"/>
+    <position name="motor3" joint="joint3" kp=".3" ctrlrange="-3.14159 3.14159" forcerange="-.0343 .0343"/>
     <position name="pen_servo" joint="pen_lift" kp="80" ctrlrange="0 .012" forcerange="-8 8"/>
   </actuator>
   <sensor>

@@ -20,8 +20,18 @@ export default function handler(req,res) {
       if (Math.hypot(fx-point.x,fy-point.y)>.0001)
         return res.status(422).json({error:'Kinematic inconsistency at trajectory waypoint'});
     }
+    // Cap commanded incremental joint speed near the torque datasheet's 120 Hz test point.
+    // This does not enforce acceleration, verify motor tracking or prove torque margin.
+    const maxHalfstepsPerSecond=100, halfstepsPerRev=4096;
+    let duration=plan.points[0]?.dt||0;
+    for(let i=1;i<plan.points.length;i++){
+      const prev=plan.points[i-1],cur=plan.points[i];
+      const maxSteps=Math.max(...cur.q.map((q,j)=>Math.abs(q-prev.q[j])*halfstepsPerRev/(2*Math.PI)));
+      cur.dt=Math.max(cur.dt,maxSteps/maxHalfstepsPerSecond);
+      duration+=cur.dt;
+    }
     return res.status(200).json({version:1,units:{angles:'rad',coordinates:'m',time:'s'},text:plan.text,
-      points:plan.points,strokes:plan.strokes,estimatedDuration:plan.estimatedDuration,
-      safety:{requiresManualCalibration:true,requiresLocalArm:true,closedLoopFeedback:false,penLiftRequired:true}});
+      points:plan.points,strokes:plan.strokes,estimatedDuration:duration,
+      safety:{requiresManualCalibration:true,requiresLocalArm:true,closedLoopFeedback:false,penLiftRequired:true,maxPlannedHalfStepsPerSecond:100,motorTorqueVerified:false,accelerationLimited:false}});
   } catch(err) {return res.status(422).json({error:String(err.message).slice(0,200)});}
 }

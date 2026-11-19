@@ -20,6 +20,17 @@
  <p class="explain">Before arming: install three ULN2003 boards with an independent motor supply, check motor direction, fit a physical emergency power switch, set hardware zero marks and calibrate limits. Firmware blocks pen-down until its lift servo is configured.</p>
  <a href="https://github.com/lalitkumar790/3R-manipulator/tree/main/hardware" target="_blank" rel="noopener">Firmware, pin mapping and safety guide ↗</a>
  </div>
+<div class="section torque-panel">
+ <div class="row between"><h3>Motor torque feasibility</h3><span class="chip" id="torque-status">ESTIMATED</span></div>
+ <p>Based on CAD-derived solid PLA masses, assumed 32 g downstream motors and 18 g pen. Conservative straight-arm pen-drag direction. This is a model estimate, not a motor test.</p>
+ <label class="slider-head" for="pen-force"><span>Sideways pen drag</span><strong id="pen-force-label">0.10 N</strong></label>
+ <input id="pen-force" type="range" min="0" max="250" step="10" value="100">
+ <label class="slider-head" for="torque-accel"><span>Joint acceleration</span><strong id="torque-accel-label">0.50 rad/s²</strong></label>
+ <input id="torque-accel" type="range" min="0" max="150" step="10" value="50">
+ <div id="torque-results"></div>
+ <p class="explain" id="torque-summary">Calculated against a 34.3 mN·m reference at 120 Hz; no friction margin included.</p>
+ <p class="explain">At 0.10 N contact force, roughly 0.028 N·m of the base-joint demand comes from pen drag alone. A 5 V ULN2003 Darlington driver has voltage drop; actual motor torque can be lower. Motor temperature, supply voltage, backlash and bearing friction are unmeasured.</p>
+ </div>
 <div class="section"><div class="row between"><h3>Simulation engine</h3><span class="chip" id="engine-badge">KINEMATIC</span></div><div class="row action"><button id="physics" class="primary-subtle">Start MuJoCo physics</button><button id="reset">Reset</button></div><p class="explain" id="engine-info">Use kinematics immediately or enable browser MuJoCo WASM to simulate position actuators, joint inertia and contact proxies.</p></div>
 <div class="section motor-panel"><div class="row between"><h3>Stepper motor assembly</h3><span class="chip">28BYJ-48 · visual</span></div><label class="motor-toggle"><input id="show-steppers" type="checkbox" checked> Show three motors and shafts</label><p id="motor-description">Motors registered to original CAD fixing-hole coordinates.</p><p class="explain">Motor tabs align with fixing holes in Base Lid, Link 1 and Link 2. All three CAD links have been turned so the motor-pocket faces point toward the supporting motors. Gold sleeves mark estimated shaft extensions. Verify actual motor dimensions, z-height, couplers and mechanical clearance before building.</p></div><div class="section"><div class="row between"><h3>Joint angles</h3><button class="mini" id="home">Home</button></div><div id="joint-controls"></div></div>
 <div class="section"><h3>Pen and workspace</h3><div class="stat-grid"><div><small>Wrist → pen</small><strong>60 mm</strong></div><div><small>Joint centers</small><strong>120 / 100 mm</strong></div><div><small>Pen clearance</small><strong id="lift">12 mm</strong></div><div><small>Writing speed</small><strong id="speed-label">15 mm/s</strong></div></div><label class="slider-head" for="speed">Writing speed</label><input type="range" id="speed" min="5" max="45" value="15"></div>

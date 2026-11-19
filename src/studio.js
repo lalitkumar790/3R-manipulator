@@ -3,6 +3,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import './studio.css';
 import {planWriting,forward,inverse} from './writing.js';
 import {attachCad} from './cad-loader.js';
+import {estimateTorque,motorReferenceTorqueNm} from './torque-estimate.js';
 const $=id=>document.getElementById(id);
 const host=$('three'),scene=new THREE.Scene();scene.background=new THREE.Color(0x0a182a);
 const camera=new THREE.PerspectiveCamera(43,1,.002,8);camera.up.set(0,0,1);camera.position.set(.37,-.33,.35);
@@ -175,6 +176,34 @@ function renderWritingPreview(planned){
  ctx.font='14px sans-serif';ctx.fillStyle='#4d5e71';
  ctx.fillText(fixedPen()?'Orange lines = marks made when moving between letters':'Only pen-down strokes are inked',18,H-11);
 }
+
+
+function renderTorqueAudit(){
+ const force=Number($('pen-force').value)/1000,accel=Number($('torque-accel').value)/100;
+ $('pen-force-label').textContent=force.toFixed(2)+' N';
+ $('torque-accel-label').textContent=accel.toFixed(2)+' rad/s²';
+ const data=estimateTorque(force,accel);
+ $('torque-results').replaceChildren();
+ for(const joint of data){
+   const el=document.createElement('div');el.className='torque-row';
+   const label=document.createElement('div');label.className='row between';
+   const a=document.createElement('strong');a.textContent='J'+joint.joint;
+   const b=document.createElement('span');b.textContent=(joint.torqueNm*1000).toFixed(1)+' mN·m · '+(joint.fraction*100).toFixed(0)+'% of test reference';
+   label.append(a,b);el.append(label);
+   const track=document.createElement('div');track.className='torque-track';
+   const fill=document.createElement('div');fill.className='torque-fill';
+   if(joint.fraction>1)fill.classList.add('over');
+   else if(joint.fraction>.5)fill.classList.add('warning');
+   fill.style.width=Math.min(100,joint.fraction*100).toFixed(1)+'%';
+   track.append(fill);el.append(track);$('torque-results').append(el);
+ }
+ const j1=data[0].fraction;
+ $('torque-status').textContent=j1>1?'MODEL OVERLOAD':j1>.5?'LOW MARGIN':'MODEL LOW LOAD';
+ $('torque-summary').textContent='J1 estimated '+(data[0].torqueNm*1000).toFixed(1)+' mN·m vs '+(motorReferenceTorqueNm*1000).toFixed(1)+' mN·m nominal 120 Hz test figure. The estimate excludes mechanical losses and torque drop at higher speeds; green does NOT certify hardware safety.';
+}
+$('pen-force').addEventListener('input',renderTorqueAudit);
+$('torque-accel').addEventListener('input',renderTorqueAudit);
+renderTorqueAudit();
 
 const sliders=[];
 for(let i=0;i<3;i++){const d=document.createElement('div');d.className='ctrl';d.innerHTML='<label class="slider-head"><span>J'+(i+1)+' · '+['Base','Elbow','Pen holder'][i]+'</span><span class="val">0°</span></label>';const input=document.createElement('input');input.type='range';input.min=-180;input.max=180;input.step=.5;input.setAttribute('aria-label','Joint '+(i+1));input.addEventListener('input',()=>{playing=false;plan=null;targetQ[i]=Number(input.value)*Math.PI/180;targetLift=.012;setStatus('MANUAL CONTROL')});d.append(input);$('joint-controls').append(d);sliders.push({input,value:d.querySelector('.val')})}
