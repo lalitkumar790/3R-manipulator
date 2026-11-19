@@ -127,6 +127,17 @@ function frame(t){requestAnimationFrame(frame);const dt=Math.min(.08,Math.max(0,
  try{const sample=physics.step(targetQ,targetLift,Math.max(1,Math.round(dt/.002)));displayQ=sample.slice(0,3);actualLift=sample[3];physicsTime+=dt;}
  catch(e){$('engine-info').textContent='MuJoCo error, using kinematic fallback: '+String(e.message);physics?.dispose();physics=null;}
  }else{const a=Math.min(1,dt*24);displayQ=displayQ.map((q,i)=>q+(targetQ[i]-q)*a);actualLift+=(targetLift-actualLift)*a}
+ if(uno?.connected && hw('uno-follow')?.checked && uno.estimatedQ) {
+   displayQ=[...uno.estimatedQ];
+   // No Z/servo feedback available. Lift remains commanded, not physically verified.
+   actualLift=targetLift;
+   hw('runtime').textContent='UNO / OPEN-LOOP ESTIMATE';
+ }else {
+   hw('runtime').textContent=physics?'3R / MUJOCO':'3R / PLANAR XY';
+ }
+ if(uno?.connected && uno.estimatedQ){
+   hw('hardware-pose').textContent='Uno estimated J1/J2/J3: '+uno.estimatedQ.map(v=>(v*180/Math.PI).toFixed(1)+'°').join(' / ')+' (steps only)';
+ }
  setJointDisplay(displayQ,actualLift);
  const p=actualTip();$('tip').textContent='x '+(p.x*1000).toFixed(1)+' · y '+(p.y*1000).toFixed(1)+' · z '+(p.z*1000).toFixed(1)+' mm';
  $('feedback').textContent=displayQ.map((q,i)=>'J'+(i+1)+' '+(q*180/Math.PI).toFixed(1)+'°').join(' · ');

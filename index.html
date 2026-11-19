@@ -7,6 +7,8 @@
  <p>Connect the Uno over USB using desktop Chrome or Edge. This controls real hardware only after manual zeroing and arming; the cloud API plans trajectories but cannot access USB.</p>
  <div class="row action"><button id="uno-connect" class="primary-subtle">Connect USB</button><button id="uno-zero" disabled>Set zero</button><button id="uno-arm" disabled>Arm drivers</button><button id="uno-jog" disabled>Jog to sliders (max 5°)</button></div>
  <div class="row action"><button id="uno-write" class="primary" disabled>Send writing to Uno</button><button id="uno-disarm" disabled>Disarm</button><button id="uno-stop" class="emergency" disabled>■ STOP</button></div>
+ <label class="slider-head" style="align-items:center;gap:10px"><input id="uno-follow" type="checkbox" checked style="width:auto"> Follow Uno estimated step position in 3D (not encoder feedback)</label>
+ <div class="message" id="hardware-pose">Estimated hardware joints: unavailable</div>
  <div class="message" id="uno-status" role="status" aria-live="polite">Hardware is disconnected. The simulation is safe to use without hardware.</div>
  <div class="row micro"><span id="uno-progress">USB: idle</span><span>Firmware: 115200 baud · watchdog 1 s</span></div>
  <p class="explain">Before arming: install STEP/DIR drivers with an independent motor supply, check motor direction, fit a physical emergency power switch, set hardware zero marks and calibrate limits. Firmware blocks pen-down until its lift servo is configured.</p>

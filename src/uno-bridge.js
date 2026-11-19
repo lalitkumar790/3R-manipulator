@@ -8,7 +8,7 @@ export class UnoBridge {
     this.port = null; this.reader = null; this.writer = null;
     this.connected = false; this.armed = false; this.calibrated = false;
     this.busy = false; this.abort = false; this.seq = 0; this.received = [];
-    this.heartbeat = null; this.lastReply = 0; this.lastJog = [0,0,0]; this.penLiftInstalled = false; this.hello = false; this.fault = null;
+    this.estimatedQ = null; this.heartbeat = null; this.lastReply = 0; this.lastJog = [0,0,0]; this.penLiftInstalled = false; this.hello = false; this.fault = null;
   }
   async connect() {
     if (!('serial' in navigator)) throw new Error('Web Serial requires desktop Chrome or Edge on HTTPS.');
@@ -45,6 +45,14 @@ export class UnoBridge {
                 if (line.includes('TIMEOUT') || line.includes('DISARM')) this.armed = false;
                 this.onStatus(line);
               }
+              if (line.startsWith('STATE,')) {
+                const chunks=line.split(',');
+                const steps=chunks.slice(2,5).map(Number);
+                if(chunks.length===5 && steps.length===3 && steps.every(Number.isFinite)) {
+                  // Estimates derived from firmware step counters, NOT measured shaft angles.
+                  this.estimatedQ=steps.map(n=>n*Math.PI*2/(200*16));
+                }
+              }
               if (line.startsWith('STATE')) this.onStatus(line);
             }
           }
@@ -79,7 +87,7 @@ export class UnoBridge {
   async setZero() {
     if (this.busy || this.armed) throw new Error('Disarm first.');
     await this.commandAndWait('ZERO','OK,ZERO');
-    this.calibrated = true; this.lastJog = [0,0,0];
+    this.calibrated = true; this.lastJog = [0,0,0]; this.estimatedQ=[0,0,0];
     this.onStatus('Logical zero recorded (not homed). Physically check the joint marks.');
   }
   async arm() {
