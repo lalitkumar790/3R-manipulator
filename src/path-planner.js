@@ -88,7 +88,9 @@ export function planStrokes(strokes,speed=.012,colors=[]){
   }
   last=to;
  }
- for(const stroke of prepared){
+ for(const [i,stroke] of prepared.entries()){
+  currentStroke=i;
+  currentColor=typeof colors[i]==='string'&&/^#[0-9a-fA-F]{6}$/.test(colors[i])?colors[i]:'#1c2638';
   travel(stroke[0],.012,false);
   append(stroke[0][0],stroke[0][1],0,false,.22);
   for(let i=1;i<stroke.length;i++)travel(stroke[i],0,true);
