@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "node scripts/prepare-cad.mjs && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "build": "npm run test && node scripts/prepare-cad.mjs && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@mujoco/mujoco": "^3.3.0",

@@ -34,7 +34,7 @@ export function prepareStrokes(strokes){
    if(!points.length||dist(points[points.length-1],p)>0.00012)points.push([p[0],p[1]]);
   }
   if(points.length>=2){
-   const simplified=rdp(points,.0012);
+   const simplified=rdp(points,.0025);
    if(simplified.length>=2)clean.push(simplified);
   }
  }
@@ -46,8 +46,22 @@ export function prepareStrokes(strokes){
  const scale=Math.min(WIDTH/dx,HEIGHT/dy);
  const centerSourceX=(minX+maxX)/2,centerSourceY=(minY+maxY)/2;
  // Y is inverted to go from canvas pixels (down) to robot coordinates (up).
- return clean.map(stroke=>stroke.map(([x,y])=>
-  [CENTER_X+(x-centerSourceX)*scale,CENTER_Y-(y-centerSourceY)*scale]));
+ return clean.map(stroke=>{
+   let path=stroke.map(([x,y])=>[CENTER_X+(x-centerSourceX)*scale,CENTER_Y-(y-centerSourceY)*scale]);
+   // Simplify in physical millimetres after fitting. Avoids thousands of tiny
+   // segments and over-detailed pixel traces that destabilize animation.
+   if(path.length>5)path=rdp(path,.00024);
+   if(path.length>12){
+     // A restrained symmetric 3-tap filter reduces digitizer jitter while
+     // keeping endpoints in exactly the positions the user drew.
+     path=path.map((p,i)=>{
+       if(i===0||i===path.length-1)return p;
+       const a=path[i-1],b=path[i+1];
+       return[p[0]*.8+(a[0]+b[0])*.1,p[1]*.8+(a[1]+b[1])*.1];
+     });
+   }
+   return path;
+ });
 }
 export function planStrokes(strokes,speed=.012,colors=[]){
  if(!Number.isFinite(speed)||speed<.003||speed>.045)throw Error('Writing speed out of range.');
@@ -67,7 +81,7 @@ export function planStrokes(strokes,speed=.012,colors=[]){
   if(!last){last=to;append(to[0],to[1],lift,false,.02);return;}
   const from=last,di=dist(from,to);
   const duration=Math.max(.02,di/(ink?speed:Math.max(speed*2.5,.035)));
-  const n=Math.max(1,Math.ceil(di/.0015));
+  const n=Math.max(1,Math.ceil(di/.0010));
   for(let i=1;i<=n;i++){
    const u=i/n;
    append(from[0]+u*(to[0]-from[0]),from[1]+u*(to[1]-from[1]),lift,ink,duration/n);

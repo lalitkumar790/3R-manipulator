@@ -5,7 +5,8 @@ import {planWriting,forward,inverse} from './writing.js';
 import {planStrokes} from './path-planner.js';
 import {hindiTextToStrokes} from './hindi-outline.js';
 import {installDrawPad} from './draw-pad.js';
-import {traceRaster,PEN_COLORS} from './image-trace.js';
+import {interpretImage} from './image-interpret.js';
+import {sampleTimedPlan} from './motion-smoothing.js';
 import {exportDesignFiles} from './design-export.js';
 import {attachCad} from './cad-loader.js';
 import {estimateTorque,motorReferenceTorqueNm} from './torque-estimate.js';
@@ -158,6 +159,7 @@ const tipObject=new THREE.Object3D();tipObject.position.z=-.082;penCarrier.add(t
 const tipTmp=new THREE.Vector3();
 function actualTip(){scene.updateMatrixWorld(true);return tipObject.getWorldPosition(tipTmp.clone());}
 let targetQ=[-.85,1.4,-.55],displayQ=[...targetQ],targetLift=.012,actualLift=.012,physics=null,physicsTime=0,playing=false,paused=false,plan=null,planIndex=0,planClock=0,inkPoints=[],line=null,previous=null,slowAccumulator=0;
+let playbackElapsed=0,playbackDuration=0,completionHold=0,trackingErrorM=0,trackingErrorRad=0;
 const inkMaterial=new THREE.LineBasicMaterial({color:0x174d9b,linewidth:2});
 const dragMaterial=new THREE.LineBasicMaterial({color:0xe58b42,linewidth:2});
 const inkLayers=new Map();let previousInkColor=null;
@@ -169,7 +171,7 @@ function renderWritingPreview(planned){
  const ctx=canvas.getContext('2d');const W=canvas.width,H=canvas.height;
  ctx.fillStyle='#f1f4f8';ctx.fillRect(0,0,W,H);
  ctx.strokeStyle='#d1dce8';ctx.lineWidth=1;ctx.strokeRect(9,9,W-18,H-18);
- if(!planned?.points?.length){ctx.fillStyle='#66758a';ctx.font='20px sans-serif';ctx.fillText('Enter text and click Plan & write',30,80);return}
+ if(!planned?.points?.length){ctx.fillStyle='#66758a';ctx.font='20px sans-serif';ctx.fillText('Create a design and click Plan & simulate',30,80);return}
  const pts=planned.points,xx=pts.map(p=>p.x),yy=pts.map(p=>p.y);
  const xMin=Math.min(...xx),xMax=Math.max(...xx),yMin=Math.min(...yy),yMax=Math.max(...yy);
  const scale=Math.min((W-66)/Math.max(.012,xMax-xMin),(H-50)/Math.max(.018,yMax-yMin));
@@ -221,26 +223,47 @@ function updateSlider(){sliders.forEach((s,i)=>{s.input.value=(targetQ[i]*180/Ma
 function setStatus(text){$('status').textContent=text}
 function message(text,isError=false){$('warning').textContent=text;$('warning').classList.toggle('error',isError)}
 function setJointDisplay(q,lift){j1.rotation.z=q[0];j2.rotation.z=q[1];j3.rotation.z=q[2];penCarrier.position.z=lift;}
+// BufferGeometry capacity grows geometrically. We update only new vertices;
+// previously every line fragment rebuilt all prior strokes, causing major lag.
 function putInk(p,isTravel=false,color='#1c2638'){
  if(!Number.isFinite(p.x)||p.z>.0035)return;
  const key=isTravel?'__travel__':color;
  const a=new THREE.Vector3(p.x,p.y,.0014);
- if(previous && (previous.distanceTo(a)>.008 || previousInkColor!==key))previous=null;
+ if(previous&&(previous.distanceTo(a)>.008||previousInkColor!==key))previous=null;
  if(previous){
    let layer=inkLayers.get(key);
-   if(!layer){layer={segments:[],line:null,material:isTravel?dragMaterial:new THREE.LineBasicMaterial({color,linewidth:2})};inkLayers.set(key,layer)}
-   layer.segments.push(previous.clone(),a);
-   if(layer.line){scene.remove(layer.line);layer.line.geometry.dispose()}
-   layer.line=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(layer.segments),layer.material);
-   scene.add(layer.line);
+   if(!layer){
+     const capacity=512,geometry=new THREE.BufferGeometry();
+     const attr=new THREE.BufferAttribute(new Float32Array(capacity*3),3);
+     attr.setUsage(THREE.DynamicDrawUsage);
+     geometry.setAttribute('position',attr);geometry.setDrawRange(0,0);
+     const material=isTravel?dragMaterial:new THREE.LineBasicMaterial({color,linewidth:2});
+     const mesh=new THREE.LineSegments(geometry,material);mesh.frustumCulled=false;scene.add(mesh);
+     layer={capacity,used:0,geometry,attr,line:mesh,material};
+     inkLayers.set(key,layer);
+   }
+   if(layer.used+2>layer.capacity){
+     const capacity=layer.capacity*2;
+     const array=new Float32Array(capacity*3);
+     array.set(layer.attr.array);
+     layer.attr=new THREE.BufferAttribute(array,3);
+     layer.attr.setUsage(THREE.DynamicDrawUsage);
+     layer.geometry.setAttribute('position',layer.attr);
+     layer.capacity=capacity;
+   }
+   let offset=layer.used*3;
+   layer.attr.array.set([previous.x,previous.y,previous.z,a.x,a.y,a.z],offset);
+   layer.used+=2;
+   layer.geometry.setDrawRange(0,layer.used);
+   layer.attr.needsUpdate=true;
  }
  previous=a;previousInkColor=key;
 }
 function clearInk(){
  inkPoints=[];dragPoints=[];previous=null;previousInkColor=null;
  for(const layer of inkLayers.values()){
-  if(layer.line){scene.remove(layer.line);layer.line.geometry.dispose()}
-  if(layer.material!==dragMaterial)layer.material.dispose();
+   scene.remove(layer.line);layer.geometry.dispose();
+   if(layer.material!==dragMaterial)layer.material.dispose();
  }
  inkLayers.clear();line=null;dragLine=null;
 }
@@ -281,7 +304,7 @@ $('image-detail').oninput=()=>{
  $('image-detail-label').textContent=$('image-detail').value;
  convertedImage=null;setExport(null,null);renderWritingPreview(null);
 };
-$('image-colors').onchange=()=>{convertedImage=null;setExport(null,null);renderWritingPreview(null)};
+$('image-style').onchange=()=>{convertedImage=null;setExport(null,null);renderWritingPreview(null)};
 function invalidateImage(){
  convertedImage=null;setExport(null,null);renderWritingPreview(null);
 }
@@ -317,9 +340,22 @@ window.addEventListener('paste',async e=>{
 async function convertImage(){
  if(!imageSource)throw Error('Upload or paste an image first.');
  $('image-status').textContent='Tracing image contours…';
- convertedImage=await traceRaster(imageSource,{mode:$('image-colors').value,detail:Number($('image-detail').value)});
+ convertedImage=await interpretImage(imageSource,{mode:$('image-style').value,detail:Number($('image-detail').value)});
  const strokes=convertedImage.strokes;
- $('image-status').textContent=strokes.length+' color-grouped contours converted from '+convertedImage.meta.fileName+'. Preview and export ready.';
+ $('image-status').textContent=strokes.length+' '+convertedImage.meta.style+' line-art strokes generated from '+convertedImage.meta.fileName+'. Preview and export ready.';
+ const canvas=$('image-outline-preview'),ctx=canvas.getContext('2d');
+ ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+ const bounds=strokes.flatMap(v=>v.points),xs=bounds.map(p=>p[0]),ys=bounds.map(p=>p[1]);
+ const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+ const scale=Math.min((canvas.width-24)/Math.max(.0001,maxX-minX),(canvas.height-24)/Math.max(.0001,maxY-minY));
+ ctx.strokeStyle='#202a3b';ctx.lineWidth=1.3;ctx.lineJoin='round';ctx.lineCap='round';
+ for(const stroke of strokes){
+  if(stroke.points.length<2)continue;
+  ctx.beginPath();
+  const [x,y]=stroke.points[0];ctx.moveTo(12+(x-minX)*scale,12+(y-minY)*scale);
+  for(const p of stroke.points.slice(1))ctx.lineTo(12+(p[0]-minX)*scale,12+(p[1]-minY)*scale);
+  ctx.stroke();
+ }
  const planned=await planCurrentInput();
  if(fixedPen())planned.points=planned.points.map(p=>({...p,lift:0}));
  renderWritingPreview(planned);
@@ -372,7 +408,7 @@ async function beginWriting(){
    if(fixedPen())plan.points=plan.points.map(point=>({...point,lift:0}));
    renderWritingPreview(plan);
    setExport(plan,writingInputMode()==='image'?{inputType:'image',...convertedImage.meta}:{inputType:writingInputMode(),text:$('message').value,virtualPen:virtualPen()});
-   planIndex=0;planClock=0;playing=true;paused=false;previous=null;
+   planIndex=0;planClock=0;playbackElapsed=0;completionHold=0;playbackDuration=plan.points.reduce((sum,p)=>sum+p.dt,0);playing=true;paused=false;previous=null;
    setStatus(fixedPen()?'WRITING · PEN FIXED':'WRITING · PEN LIFT');
    message(plan.strokes+' strokes · '+plan.estimatedDuration.toFixed(1)+' s · '+plan.points.length+' waypoints. '+(fixedPen()?'Without lift, every travel route marks the paper.':'Virtual lift separates all outlines and strokes.'));
    $('progress').textContent='0%';
@@ -402,27 +438,45 @@ $('physics').onclick=async()=>{
 };
 function animatePlan(dt){
  if(!playing||paused||!plan)return;
- let remaining=dt;
- while(remaining>0&&planIndex<plan.points.length){
- const s=plan.points[planIndex];const needed=s.dt-planClock;if(remaining<needed){planClock+=remaining;remaining=0;}else{remaining-=needed;planClock=0;planIndex++;}
- const cur=plan.points[Math.min(planIndex,plan.points.length-1)];
- const prev=plan.points[Math.max(0,planIndex-1)];
- const t=Math.min(1,planClock/Math.max(cur.dt,.00001));
- targetQ=cur.q.map((q,i)=>prev.q[i]+(q-prev.q[i])*t);
- targetLift=prev.lift+(cur.lift-prev.lift)*t;
- if(!cur.ink && !fixedPen())previous=null;
- }
- if(planIndex>=plan.points.length){const total=plan.points.length;stop();$('progress').textContent='COMPLETE · '+total+' steps';message(fixedPen()?'Writing finished: orange marks show unwanted pen dragging between strokes.':'Writing finished: only pen-down strokes are inked.')}
- else $('progress').textContent=Math.round(100*planIndex/plan.points.length)+'%';
+ const rate=physics?Number($('physics-rate').value||.35):1;
+ playbackElapsed=Math.min(playbackDuration,playbackElapsed+dt*rate);
+ const state=sampleTimedPlan(plan.points,playbackElapsed);
+ if(!state)return;
+ planIndex=state.index;
+ targetQ=state.q;targetLift=state.lift;
+ // Keep reference at the final point until the torque-limited robot catches up,
+ // but never fabricate the ink trail of a motor that cannot reach it.
+ if(playbackElapsed>=playbackDuration){
+   completionHold+=dt;
+   const settled=!physics||trackingErrorM<.0015;
+   if(settled||completionHold>4){
+     const error=trackingErrorM;
+     const total=plan.points.length;
+     const incomplete=physics&&error>=.0015;
+     stop();
+     $('progress').textContent=(incomplete?'FINISHED WITH TRACKING LAG':'COMPLETE')+' · '+total+' steps';
+     message(incomplete
+      ?'MuJoCo could not reach the final target within 4 s. Final pen error ≈ '+(error*1000).toFixed(1)+' mm. Slow playback further or adjust the path.'
+      :'Trajectory finished; simulated writing follows tracked pen pose.');
+   }
+ }else $('progress').textContent=Math.round(100*playbackElapsed/Math.max(.001,playbackDuration))+'%';
  updateSlider();
 }
 let last=performance.now();
 function frame(t){requestAnimationFrame(frame);const dt=Math.min(.08,Math.max(0,(t-last)/1000));last=t;
  animatePlan(dt);
  if(physics){
- try{const sample=physics.step(targetQ,targetLift,Math.max(1,Math.round(dt/.002)));displayQ=sample.slice(0,3);actualLift=sample[3];physicsTime+=dt;}
+ try{
+   const sample=physics.step(targetQ,targetLift,dt);
+   displayQ=sample.q.slice(0,3);actualLift=sample.q[3];physicsTime+=dt;
+   trackingErrorRad=sample.errorRad;
+   const desired=forward(targetQ),observed=forward(displayQ);
+   trackingErrorM=Math.hypot(desired[0]-observed[0],desired[1]-observed[1]);
+   $('tracking-error').textContent='Pen tracking error '+(trackingErrorM*1000).toFixed(2)+' mm · max joint error '+(trackingErrorRad*180/Math.PI).toFixed(1)+'°. Ink follows actual simulated pen.';
+   $('tracking-error').classList.toggle('error',trackingErrorM>.003);
+ }
  catch(e){$('engine-info').textContent='MuJoCo error, using kinematic fallback: '+String(e.message);physics?.dispose();physics=null;}
- }else{const a=Math.min(1,dt*24);displayQ=displayQ.map((q,i)=>q+(targetQ[i]-q)*a);actualLift+=(targetLift-actualLift)*a}
+ }else{const a=Math.min(1,dt*24);displayQ=displayQ.map((q,i)=>q+(targetQ[i]-q)*a);actualLift+=(targetLift-actualLift)*a;trackingErrorM=0;trackingErrorRad=0;}
  if(uno?.connected && hw('uno-follow')?.checked && uno.estimatedQ) {
    displayQ=[...uno.estimatedQ];
    // No Z/servo feedback available. Lift remains commanded, not physically verified.

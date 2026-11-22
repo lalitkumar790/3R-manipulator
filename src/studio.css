@@ -46,3 +46,8 @@
 #image-preview{display:block;width:100%;height:auto;border-radius:9px;background:#fff;margin:8px 0}
 #image-colors{border:1px solid #466889;background:#132e49;color:#e8f5ff;border-radius:8px;padding:7px}
 #export-actions button{font-size:10px;flex:1}
+
+#image-outline-preview{display:block;width:100%;height:auto;border:1px solid #6b8cae;border-radius:9px;background:#fff}
+#image-style,#physics-rate{min-width:140px;padding:8px;border:1px solid #456889;border-radius:8px;color:#e6f3fc;background:#102840}
+.physics-tune{font-size:12px;margin:12px 0;color:#bed1e8}
+#tracking-error{font-variant-numeric:tabular-nums}
