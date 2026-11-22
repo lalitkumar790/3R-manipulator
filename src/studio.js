@@ -160,6 +160,7 @@ const tipTmp=new THREE.Vector3();
 function actualTip(){scene.updateMatrixWorld(true);return tipObject.getWorldPosition(tipTmp.clone());}
 let targetQ=[-.85,1.4,-.55],displayQ=[...targetQ],targetLift=.012,actualLift=.012,physics=null,physicsTime=0,playing=false,paused=false,plan=null,planIndex=0,planClock=0,inkPoints=[],line=null,previous=null,slowAccumulator=0;
 let playbackElapsed=0,playbackDuration=0,completionHold=0,trackingErrorM=0,trackingErrorRad=0;
+let positionToStart=false,positionTimeout=0,trackingHold=0,frameBacklog=0;
 const inkMaterial=new THREE.LineBasicMaterial({color:0x174d9b,linewidth:2});
 const dragMaterial=new THREE.LineBasicMaterial({color:0xe58b42,linewidth:2});
 const inkLayers=new Map();let previousInkColor=null;
@@ -409,6 +410,8 @@ async function beginWriting(){
    renderWritingPreview(plan);
    setExport(plan,writingInputMode()==='image'?{inputType:'image',...convertedImage.meta}:{inputType:writingInputMode(),text:$('message').value,virtualPen:virtualPen()});
    planIndex=0;planClock=0;playbackElapsed=0;completionHold=0;playbackDuration=plan.points.reduce((sum,p)=>sum+p.dt,0);playing=true;paused=false;previous=null;
+   positionToStart=!!physics;positionTimeout=0;trackingHold=0;
+   if(positionToStart){targetQ=[...plan.points[0].q];targetLift=.012;setStatus('MUJOCO · POSITIONING PEN UP');}
    setStatus(fixedPen()?'WRITING · PEN FIXED':'WRITING · PEN LIFT');
    message(plan.strokes+' strokes · '+plan.estimatedDuration.toFixed(1)+' s · '+plan.points.length+' waypoints. '+(fixedPen()?'Without lift, every travel route marks the paper.':'Virtual lift separates all outlines and strokes.'));
    $('progress').textContent='0%';
@@ -438,32 +441,60 @@ $('physics').onclick=async()=>{
 };
 function animatePlan(dt){
  if(!playing||paused||!plan)return;
- const rate=physics?Number($('physics-rate').value||.35):1;
+ // Position the *physical* simulated arm to the first pen-up waypoint before
+ // advancing the drawing clock. Previously the model drew in transit.
+ if(physics&&positionToStart){
+   positionTimeout+=dt;
+   const first=plan.points[0];
+   targetQ=[...first.q];targetLift=.012;
+   const requested=forward(first.q),actual=forward(displayQ);
+   const initialError=Math.hypot(requested[0]-actual[0],requested[1]-actual[1]);
+   const atStart=initialError<.0015&&actualLift>.009;
+   if(atStart){positionToStart=false;trackingHold=0;setStatus('MUJOCO · DRAWING')}
+   else if(positionTimeout>22){
+     stop();message('MuJoCo cannot reach the starting pen-up pose within 22 seconds. Check torque, collision geometry, and joint limits.',true);return;
+   }else{
+     $('progress').textContent='POSITIONING · '+(initialError*1000).toFixed(1)+' mm';
+     return;
+   }
+ }
+ const nominalRate=physics?Number($('physics-rate').value||.35):1;
+ // Avoid running the drawing clock far ahead of the constrained joints.
+ // Distinct from masking the actual pose: the ink is always drawn at measured
+ // MuJoCo qpos. A persistent failure is reported instead of falsely succeeding.
+ let rate=nominalRate;
+ if(physics&&playbackElapsed<playbackDuration){
+   if(trackingErrorM>.007){rate=0;trackingHold+=dt}
+   else if(trackingErrorM>.0025){rate=nominalRate*.18;trackingHold+=dt}
+   else trackingHold=0;
+   if(trackingHold>9){
+     const error=trackingErrorM;
+     stop();message('MuJoCo tracking stalled at '+(error*1000).toFixed(1)+' mm. No reliable drawing is possible with these torque and contact assumptions. Lower the speed or lighten pen friction.',true);
+     $('progress').textContent='TRACKING STALL';return;
+   }
+ }
  playbackElapsed=Math.min(playbackDuration,playbackElapsed+dt*rate);
  const state=sampleTimedPlan(plan.points,playbackElapsed);
  if(!state)return;
  planIndex=state.index;
  targetQ=state.q;targetLift=state.lift;
- // Keep reference at the final point until the torque-limited robot catches up,
- // but never fabricate the ink trail of a motor that cannot reach it.
  if(playbackElapsed>=playbackDuration){
    completionHold+=dt;
    const settled=!physics||trackingErrorM<.0015;
    if(settled||completionHold>4){
-     const error=trackingErrorM;
-     const total=plan.points.length;
+     const error=trackingErrorM,total=plan.points.length;
      const incomplete=physics&&error>=.0015;
      stop();
      $('progress').textContent=(incomplete?'FINISHED WITH TRACKING LAG':'COMPLETE')+' · '+total+' steps';
      message(incomplete
-      ?'MuJoCo could not reach the final target within 4 s. Final pen error ≈ '+(error*1000).toFixed(1)+' mm. Slow playback further or adjust the path.'
-      :'Trajectory finished; simulated writing follows tracked pen pose.');
+      ?'MuJoCo could not settle within 4 s; final XY error '+(error*1000).toFixed(1)+' mm.'
+      :'Finished. Ink followed the actual simulated pen pose.');
    }
- }else $('progress').textContent=Math.round(100*playbackElapsed/Math.max(.001,playbackDuration))+'%';
+ }else $('progress').textContent=Math.round(100*playbackElapsed/Math.max(.001,playbackDuration))+'%'+(rate<nominalRate?' · TRACKING LIMITED':'');
  updateSlider();
 }
 let last=performance.now();
-function frame(t){requestAnimationFrame(frame);const dt=Math.min(.08,Math.max(0,(t-last)/1000));last=t;
+function frame(t){requestAnimationFrame(frame);const dt=Math.min(.04,Math.max(0,(t-last)/1000));last=t;
  animatePlan(dt);
  if(physics){
  try{
@@ -472,7 +503,7 @@ function frame(t){requestAnimationFrame(frame);const dt=Math.min(.08,Math.max(0,
    trackingErrorRad=sample.errorRad;
    const desired=forward(targetQ),observed=forward(displayQ);
    trackingErrorM=Math.hypot(desired[0]-observed[0],desired[1]-observed[1]);
-   $('tracking-error').textContent='Pen tracking error '+(trackingErrorM*1000).toFixed(2)+' mm · max joint error '+(trackingErrorRad*180/Math.PI).toFixed(1)+'°. Ink follows actual simulated pen.';
+   $('tracking-error').textContent='Pen error '+(trackingErrorM*1000).toFixed(2)+' mm · max joint error '+(trackingErrorRad*180/Math.PI).toFixed(1)+'° · '+(trackingErrorM>.007?'motion held for tracking':trackingErrorM>.0025?'motion slowed for tracking':'within tracking window')+'. Ink uses actual MuJoCo pose.';
    $('tracking-error').classList.toggle('error',trackingErrorM>.003);
  }
  catch(e){$('engine-info').textContent='MuJoCo error, using kinematic fallback: '+String(e.message);physics?.dispose();physics=null;}
@@ -494,7 +525,7 @@ function frame(t){requestAnimationFrame(frame);const dt=Math.min(.08,Math.max(0,
  $('lift').textContent=(actualLift*1000).toFixed(1)+' mm';
  const currentPoint=plan?.points[Math.min(planIndex,plan.points.length-1)];
  if(currentPoint?.color && nib.material?.color)nib.material.color.set(currentPoint.color);
- if(playing&&!paused&&currentPoint&&planIndex>0&&actualLift<.0035&&(currentPoint.ink||fixedPen())){
+ if(playing&&!paused&&!positionToStart&&currentPoint&&planIndex>0&&actualLift<.0035&&(currentPoint.ink||fixedPen())){
    putInk(p,!currentPoint.ink,currentPoint.color||'#1c2638');
  }else previous=null;
  controls.update();renderer.render(scene,camera)
