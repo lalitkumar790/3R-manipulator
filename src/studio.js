@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import './studio.css';
 import {planWriting,forward,inverse} from './writing.js';
+import {planStrokes} from './path-planner.js';
+import {hindiTextToStrokes} from './hindi-outline.js';
+import {installDrawPad} from './draw-pad.js';
 import {attachCad} from './cad-loader.js';
 import {estimateTorque,motorReferenceTorqueNm} from './torque-estimate.js';
 const $=id=>document.getElementById(id);
@@ -227,18 +230,58 @@ function putInk(p,isTravel=false){
 }
 function clearInk(){inkPoints=[];dragPoints=[];previous=null;if(line){scene.remove(line);line.geometry.dispose();line=null}if(dragLine){scene.remove(dragLine);dragLine.geometry.dispose();dragLine=null}}
 function stop(){playing=false;paused=false;plan=null;targetLift=fixedPen()?0:.012;$('pause').textContent='Pause';$('progress').textContent='IDLE';setStatus(physics?'MUJOCO READY':'KINEMATICS READY')}
-function beginWriting(){
- stop();clearInk();
+
+// Input adapters: English vector font, browser-shaped Devanagari contours,
+// and freehand canvas all end as identical 3R IK waypoints.
+const drawPad=installDrawPad($('draw-pad'),(count)=>{
+ $('draw-count').textContent=count+' stroke'+(count===1?'':'s');
+});
+const writingInputMode=()=>document.querySelector('input[name="write-input-mode"]:checked')?.value||'latin';
+function syncInputMode(){
+ const mode=writingInputMode();
+ $('text-input-panel').hidden=mode==='draw';
+ $('draw-input-panel').hidden=mode!=='draw';
+ $('writing-label').textContent=mode==='hindi'?'हिन्दी में लिखें':'Writing text';
+ $('message').placeholder=mode==='hindi'?'नमस्ते':'HELLO';
+ $('writing-help').textContent=mode==='hindi'?'Devanagari outlines: नमस्ते, भारत, राम':'Supports A–Z, 0–9 and basic punctuation';
+ $('stroke-info').textContent=mode==='draw'
+  ?'Draw one or more continuous shapes. Each line follows your hand-drawn route; the robot preserves aspect ratio while fitting the drawing workspace.'
+  :mode==='hindi'?'Hindi is rendered as Devanagari font outlines and traced as polylines, not converted into natural handwriting centerlines.'
+  :'English uses the original single-line vector font.';
+ $('count').textContent=$('message').value.length+'/24';
+ stop();clearInk();renderWritingPreview(null);
+}
+document.querySelectorAll('input[name="write-input-mode"]').forEach(r=>r.addEventListener('change',syncInputMode));
+$('draw-undo').onclick=()=>{drawPad.undo();renderWritingPreview(null)};
+$('draw-clear').onclick=()=>{drawPad.clear();renderWritingPreview(null)};
+syncInputMode();
+async function planCurrentInput(){
+ const speed=Number($('speed').value)/1000,mode=writingInputMode();
+ if(mode==='latin')return planWriting($('message').value,speed);
+ if(mode==='draw')return planStrokes(drawPad.getStrokes(),speed);
+ const strokes=await hindiTextToStrokes($('message').value);
+ return planStrokes(strokes,speed);
+}
+async function currentHardwarePayload(){
+ const mode=writingInputMode(),speedMmPerSecond=Number($('speed').value);
+ if(mode==='latin')return{mode,text:$('message').value,speedMmPerSecond};
+ const strokes=mode==='draw'?drawPad.getStrokes():await hindiTextToStrokes($('message').value);
+ return{mode,strokes,speedMmPerSecond,text:mode==='hindi' ? $('message').value : ''};
+}
+
+async function beginWriting(){
+ stop();clearInk();setStatus('PLANNING');
  try{
-   plan=planWriting($('message').value,Number($('speed').value)/1000);
+   const planned=await planCurrentInput();
+   plan=planned;
    if(fixedPen())plan.points=plan.points.map(point=>({...point,lift:0}));
    renderWritingPreview(plan);
    planIndex=0;planClock=0;playing=true;paused=false;previous=null;
    setStatus(fixedPen()?'WRITING · PEN FIXED':'WRITING · PEN LIFT');
-   message(plan.strokes+' strokes · '+plan.estimatedDuration.toFixed(1)+' s · '+plan.points.length+' waypoints. '+(fixedPen()?'No pen lift: orange connector paths are also drawn.':'Virtual pen lifts between strokes.'));
-   $('progress').textContent='0%'
- }
- catch(e){plan=null;message(e.message,true);setStatus('PLANNING ERROR')}
+   message(plan.strokes+' strokes · '+plan.estimatedDuration.toFixed(1)+' s · '+plan.points.length+' waypoints. '+(fixedPen()?'Without lift, every travel route marks the paper.':'Virtual lift separates all outlines and strokes.'));
+   $('progress').textContent='0%';
+   return plan;
+ }catch(e){plan=null;message(e.message,true);setStatus('PLANNING ERROR');return null}
 }
 $('write').onclick=beginWriting;$('pause').onclick=()=>{if(!playing)return;paused=!paused;$('pause').textContent=paused?'Resume':'Pause';setStatus(paused?'PAUSED':'WRITING')};
 $('clear').onclick=clearInk;$('home').onclick=()=>{stop();targetQ=[-.85,1.4,-.55];targetLift=.012;updateSlider()};
@@ -248,7 +291,8 @@ $('message').oninput=e=>$('count').textContent=e.target.value.length+'/24';
 document.querySelectorAll('input[name="pen-mode"]').forEach(radio=>radio.addEventListener('change',()=>{
  if(playing)stop();clearInk();
  $('pen-mode-hint').textContent=fixedPen()?'No-lift visualization: pen stays at the paper level throughout; travel paths leave visible orange marks. Simulation only.':'Virtual pen lift (12 mm) between strokes. No physical lift is installed.';
- try{const preview=planWriting($('message').value,Number($('speed').value)/1000);renderWritingPreview(preview)}catch{renderWritingPreview(null)}
+ // Re-preview only after pressing Plan & simulate (Hindi tracing is asynchronous).
+ renderWritingPreview(null)
  message(fixedPen()?'Fixed pen selected. The next simulation will leave travel marks.':'Virtual pen-lift simulation selected.');
 }));
 renderWritingPreview(null);
@@ -373,14 +417,16 @@ hw('uno-write').onclick = async () => {
   if(!confirm('Send this writing plan to the REAL robot? Keep one hand near the physical emergency power cutoff. The arm is open-loop and axes are not calibrated.'))return;
   try {
     hw('uno-progress').textContent='Validating entire trajectory…';
+    const requestPayload=await currentHardwarePayload();
     const response=await fetch('/api/plan',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({text:hw('message').value,speedMmPerSecond:Number(hw('speed').value)})
+      body:JSON.stringify(requestPayload)
     });
     const payload=await response.json();
     if(!response.ok)throw new Error(payload.error||'Planning request failed');
     hwStatus('Validated '+payload.points.length+' target points. Sending to Uno...');
-    beginWriting(); // Digital twin playback; NOT measured robot feedback.
+    const twinPlan=await beginWriting(); // Digital twin playback; NOT measured robot feedback.
+    if(!twinPlan)throw Error('Local simulator could not validate this path.');
     hwUpdate();
     await uno.run(payload.points,(done,total)=>{
       hw('uno-progress').textContent='Target stream '+Math.round(done/total*100)+'% · '+done+'/'+total;

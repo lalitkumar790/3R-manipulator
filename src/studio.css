@@ -29,3 +29,11 @@
 .torque-fill.warning{background:#e3ad4d}
 .torque-fill.over{background:#f36d73}
 .torque-panel input[type=range]{accent-color:#68bae6}
+
+.drawing-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:12px 0 4px}
+.drawing-tabs label{margin:0!important;display:flex!important;align-items:center;justify-content:center;gap:5px;background:#152d48;padding:10px 5px;border:1px solid #365c7d;border-radius:8px;font-size:11px;cursor:pointer}
+.drawing-tabs input{accent-color:#63bdec;max-width:14px}
+#draw-input-panel[hidden],#text-input-panel[hidden]{display:none!important}
+#draw-pad{display:block;width:100%;height:auto;touch-action:none;border:1px solid #7393b3;border-radius:9px;background:#f6f9fd;cursor:crosshair}
+#draw-count{font-variant-numeric:tabular-nums}
+#stroke-info{margin-top:9px}
