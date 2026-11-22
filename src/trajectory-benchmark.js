@@ -38,7 +38,7 @@ export function exampleDrawing(name){
   const [x,y]=shape[i],q=inverse(x,y,0,1);
   if(!q)throw Error('Example test outside 3R workspace');
   const d=i?Math.hypot(x-shape[i-1][0],y-shape[i-1][1]):0;
-  points.push({x,y,q,dt:i?Math.max(.015,d/.040):.05,ink:true,lift:0,strokeIndex:0});
+  points.push({x,y,q,dt:i?Math.max(.015,d/.040):.05,ink:i>0,lift:i>0?0:.012,strokeIndex:0});
  }
  return{points,shape};
 }
