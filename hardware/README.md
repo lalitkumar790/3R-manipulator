@@ -78,3 +78,14 @@ The simulator sidebar offers a Stepper controller comparison for circle, square 
 The software plots omit skipped steps, backlash, torque-speed derating, pen friction, joint compliance, power supply variations and real serial scheduling. Better simulation RMS does not demonstrate actual motor improvement.
 
 After validated pen-lift and safety hardware, measure physical pen traces for both modes, plus execution time, missed steps, temperature and power voltage.
+
+## Adaptive feedforward speed scheduling
+
+Three modes can be compared using the Stepper controller comparison panel:
+- Original Q commands: independent step targets.
+- Fixed buffered B segments: synchronized common time base, fixed 100 half-step/s maximum.
+- Adaptive buffered B segments: the same B firmware, but segment times are computed from local XY curvature, joint-step demand and bounded changes in the allowed step rate. The planned budget ranges 30–100 nominal half-steps/s.
+
+Tight corners and small-radius curves produce lower budgets; straight regions can return toward 100. The adaptive planner retains the firmware's conservative rate cap and pen-up first requirement. There is **no real motor feedback**, torque measurement, missed-step detection or online path replanning. In particular, adaptive does not guarantee better drawing accuracy than fixed buffered motion; software tests illustrate trade-offs in geometric stepping error and time.
+
+The rate schedule is based on image/text-derived coordinates, not measured motor state. Both buffered modes still require pen-lift hardware and have NOT been validated by flashing or exercising the Uno with motors connected. Use external motor power, mechanical support, and emergency cutoff for all physical tests.

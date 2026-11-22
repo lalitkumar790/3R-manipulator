@@ -614,14 +614,16 @@ hw('uno-write').onclick = async () => {
     const twinPlan=await beginWriting(); // Digital twin playback; NOT measured robot feedback.
     if(!twinPlan)throw Error('Local simulator could not validate this path.');
     hwUpdate();
-    const buffered=hw('uno-controller-mode').value==='buffered';
+    const controllerMode=hw('uno-controller-mode').value;
+    const buffered=controllerMode==='buffered'||controllerMode==='adaptive';
+    const adaptive=controllerMode==='adaptive';
     if(buffered&&!uno.bufferSupported)throw Error('This Uno firmware has no buffered capability (BUF=1). Upload the updated sketch.');
     const progress=(done,total)=>{
       hw('uno-progress').textContent=(buffered?'Buffered segments ':'Original targets ')+Math.round(done/total*100)+'% · '+done+'/'+total;
     };
-    if(buffered)await uno.runBuffered(payload.points,progress);
+    if(buffered)await uno.runBuffered(payload.points,progress,{adaptive});
     else await uno.run(payload.points,progress);
-    hwStatus((buffered?'Buffered':'Original')+' command stream finished. Physical step accuracy has NOT been measured.');
+    hwStatus((adaptive?'Adaptive buffered':buffered?'Fixed buffered':'Original')+' command stream finished. Physical step accuracy has NOT been measured.');
   } catch(e) {
     stop(); hwStatus('Hardware execution stopped: '+e.message,true);
   } finally { hwUpdate(); }

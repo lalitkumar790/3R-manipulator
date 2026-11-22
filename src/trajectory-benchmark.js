@@ -3,6 +3,7 @@
 // torque. These are commanded-step traces, NOT physical-accuracy results.
 import {inverse,forward} from './writing.js';
 import {bufferSegments,NOMINAL_STEPS_PER_REV,interpolateStepPosition} from './buffered-motion.js';
+import {adaptiveStepRates} from './adaptive-speed.js';
 const TICK=.0025,STEPS_TO_RAD=2*Math.PI/NOMINAL_STEPS_PER_REV;
 const stepQ=q=>q.map(v=>Math.round(v/STEPS_TO_RAD));
 const tip=s=>forward(s.map(v=>v*STEPS_TO_RAD));
@@ -63,10 +64,10 @@ function simulateLegacy(points){
  }
  return{samples,durationS:time};
 }
-function simulateBuffered(points){
+function simulateBuffered(points,adaptive=false){
  // Start at the known first target to isolate interpolation from homing.
  // Physical firmware additionally needs a slow pen-up approach segment.
- const segments=bufferSegments(points,{maxHalfStepsPerSecond:100}).filter(s=>s.ink);
+ const segments=bufferSegments(points,{maxHalfStepsPerSecond:100,adaptive}).filter(s=>s.ink);
  let current=stepQ(points[0].q),durationS=0;
  const samples=[tip(current)];
  for(let k=0;k<segments.length;k++){
@@ -81,10 +82,13 @@ function simulateBuffered(points){
 }
 export function runComparison(name){
  const {points,shape}=exampleDrawing(name);
- const old=simulateLegacy(points),buffered=simulateBuffered(points);
+ const old=simulateLegacy(points),buffered=simulateBuffered(points),adaptive=simulateBuffered(points,true);
+ const rates=adaptiveStepRates(points,{maxRate:100,minRate:30}).filter((r,i)=>points[i].ink).map(r=>r.rate);
  return{name,legacy:{...rmsDeviation(old.samples,shape),durationS:old.durationS},
   buffered:{...rmsDeviation(buffered.samples,shape),durationS:buffered.durationS},
-  traces:{reference:shape,legacy:old.samples,buffered:buffered.samples}};
+  adaptive:{...rmsDeviation(adaptive.samples,shape),durationS:adaptive.durationS,minRate:Math.min(...rates),maxRate:Math.max(...rates),meanRate:rates.reduce((a,b)=>a+b,0)/rates.length},
+  rates,
+  traces:{reference:shape,legacy:old.samples,buffered:buffered.samples,adaptive:adaptive.samples}};
 }
 export function benchmarkAll(){
  return ['circle','square','spiral'].map(runComparison);

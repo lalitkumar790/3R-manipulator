@@ -1,18 +1,22 @@
+import {adaptiveStepRates} from './adaptive-speed.js';
 // Shared pure motion preparation for the experimental Uno buffered protocol.
 // Hardware step counts are *commands*, not encoder measurements.
 export const NOMINAL_STEPS_PER_REV=4096;
 const radToSteps=q=>Math.round(q*NOMINAL_STEPS_PER_REV/(2*Math.PI));
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-export function bufferSegments(points,{maxHalfStepsPerSecond=100,maxSegmentMs=11000}={}){
+export function bufferSegments(points,{maxHalfStepsPerSecond=100,maxSegmentMs=11000,adaptive=false}={}){
  if(!Array.isArray(points)||!points.length||points.length>7500)throw Error('Invalid trajectory.');
  if(!Number.isFinite(maxHalfStepsPerSecond)||maxHalfStepsPerSecond<20||maxHalfStepsPerSecond>120)throw Error('Unsafe step-rate request.');
  const segments=[],allowedSteps=NOMINAL_STEPS_PER_REV*150/360;
+ const speedProfile=adaptive?adaptiveStepRates(points,{maxRate:maxHalfStepsPerSecond,minRate:30}):null;
+ let index=-1;
  let previous=null,previousLift=12000;
  function append(q,lift,ms,ink){
   if(segments.length>=2400)throw Error('Too many buffered segments; simplify the drawing.');
   segments.push({q:q.map(radToSteps),lift,ms:Math.round(ms),ink:!!ink});
  }
  for(const p of points){
+  index++;
   if(!Array.isArray(p.q)||p.q.length!==3||!p.q.every(Number.isFinite)||!Number.isFinite(p.lift)||!Number.isFinite(p.dt))throw Error('Invalid waypoint.');
   const q=p.q.map(radToSteps),lift=Math.round(p.lift*1e6);
   if(q.some(x=>Math.abs(x)>allowedSteps)||lift<0||lift>12000)throw Error('Trajectory exceeds conservative travel limits.');
@@ -34,7 +38,8 @@ export function bufferSegments(points,{maxHalfStepsPerSecond=100,maxSegmentMs=11
   }
   const delta=Math.max(...q.map((v,i)=>Math.abs(v-previous[i])));
   // Smoothstep has peak speed 1.5× mean. Reserve another 20% for quantization.
-  const speedLimited=delta*1800/maxHalfStepsPerSecond;
+  const allowedRate=adaptive?speedProfile[index].rate:maxHalfStepsPerSecond;
+  const speedLimited=delta*1800/allowedRate;
   const requested=Math.max(40,p.dt*1000);
   const duration=Math.max(requested,speedLimited);
   // Split long moves for the firmware's limited duration field.
