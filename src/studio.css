@@ -51,3 +51,10 @@
 #image-style,#physics-rate{min-width:140px;padding:8px;border:1px solid #456889;border-radius:8px;color:#e6f3fc;background:#102840}
 .physics-tune{font-size:12px;margin:12px 0;color:#bed1e8}
 #tracking-error{font-variant-numeric:tabular-nums}
+
+.benchmark-panel{background:#11233a}
+.benchmark-panel label{font-size:11px;color:#bdd0e4}
+#benchmark-shape,#uno-controller-mode{padding:8px;background:#0c2035;border:1px solid #3d6685;border-radius:7px;color:#e5f4ff;font-size:11px;max-width:100%}
+#benchmark-plot,#benchmark-bars{display:block;width:100%;height:auto;background:#f8fafc;border-radius:8px;border:1px solid #809db2;margin:10px 0}
+#benchmark-metrics{font-size:11px;white-space:pre-wrap}
+.hardware-mode{margin:12px 0}

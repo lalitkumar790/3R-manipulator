@@ -1,3 +1,4 @@
+import {bufferSegments,stepToMilliDeg} from './buffered-motion.js';
 // Local, permission-gated USB bridge. Vercel never sees or opens the USB port.
 // Requires desktop Chrome/Edge over HTTPS and a compatible Arduino Uno sketch.
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -9,6 +10,7 @@ export class UnoBridge {
     this.connected = false; this.armed = false; this.calibrated = false;
     this.busy = false; this.abort = false; this.seq = 0; this.received = [];
     this.estimatedQ = null; this.heartbeat = null; this.lastReply = 0; this.lastJog = [0,0,0]; this.penLiftInstalled = false; this.hello = false; this.fault = null; this.stepsPerRevolution = 4096;
+    this.bufferSupported=false;this.bufferDone=[];
   }
   async connect() {
     if (!('serial' in navigator)) throw new Error('Web Serial requires desktop Chrome or Edge on HTTPS.');
@@ -42,8 +44,12 @@ export class UnoBridge {
               this.lastReply = performance.now();
               if (line.startsWith('HELLO,3R-UNO,1')) { this.hello = true; this.penLiftInstalled = line.includes('PEN=1');
                 this.boardVerified = line.includes('BOARD=ULN2003');
+                this.bufferSupported=line.includes('BUF=1');
                 const stepField=line.split(',').find(x=>x.startsWith('STEPS='));
                 if(stepField){const n=Number(stepField.slice(6));if(Number.isFinite(n)&&n>0)this.stepsPerRevolution=n;} }
+              if (line.startsWith('DONE,B,')) {
+                const id=Number(line.slice(7));if(Number.isInteger(id))this.bufferDone.push(id);
+              }
               if (line.startsWith('FAULT') || line.startsWith('ERR')) {
                 this.fault = line;
                 if (line.includes('TIMEOUT') || line.includes('DISARM')) this.armed = false;
@@ -165,6 +171,66 @@ export class UnoBridge {
       this.armed = false; this.calibrated = false; clearInterval(this.heartbeat);
       throw e;
     } finally { this.busy = false; }
+  }
+  // Buffered, synchronized position stepping. This streams bounded segments
+  // into the Uno's six-slot queue, waits for command ACK and DONE, and sends
+  // watchdog heartbeats. No encoder feedback or physical torque guarantee.
+  async runBuffered(points,onProgress=()=>{}){
+    if(!this.armed||!this.calibrated||this.busy)throw Error('Connect, zero and arm before execution.');
+    if(!this.bufferSupported)throw Error('Flash compatible firmware with BUF=1 capability.');
+    if(!this.penLiftInstalled)throw Error('Buffered pen-down drawing needs tested physical pen lift.');
+    if(this.stepsPerRevolution!==4096)throw Error('Buffered commands require verified 4096 half-steps/rev calibration.');
+    const segments=bufferSegments(points,{maxHalfStepsPerSecond:100});
+    if(!segments.length)throw Error('Empty buffered trajectory.');
+    if(segments.some(x=>x.lift<0||x.lift>12000||x.ms<40||x.ms>11000))
+      throw Error('Buffered segment outside limits.');
+    // All B commands use 16-bit sequence ids.
+    if(segments.length>2400)throw Error('Too many queued segments.');
+    this.busy=true;this.abort=false;this.fault=null;this.bufferDone=[];this.received=[];
+    let sent=0,completed=0,heart=-Infinity;
+    const start=performance.now(),totalMs=segments.reduce((sum,s)=>sum+s.ms,0);
+    const expectAck=async(seq)=>{
+      const expected='ACK,B,'+seq,until=performance.now()+1400;
+      while(performance.now()<until){
+        if(this.abort||!this.connected||!this.armed)throw Error('Buffered motion interrupted');
+        if(this.fault)throw Error(this.fault);
+        const idx=this.received.findIndex(line=>line===expected);
+        if(idx>=0){this.received.splice(idx,1);return;}
+        if(performance.now()-heart>230){await this.send('PING');heart=performance.now()}
+        await wait(12);
+      }
+      throw Error('Uno did not ACK buffered segment '+seq);
+    };
+    try{
+      while(completed<segments.length){
+        if(this.abort||!this.connected||!this.armed)throw Error('Buffered execution interrupted');
+        if(this.fault)throw Error(this.fault);
+        // Keep 2-4 segments in flight, with headroom in the Uno queue.
+        while(sent<segments.length&&sent-completed<4){
+          const seg=segments[sent],id=sent+1;
+          const fields=seg.q.map(stepToMilliDeg);
+          await this.send(['B',id,...fields,seg.lift,seg.ms].join(','));
+          await expectAck(id);
+          sent++;
+        }
+        while(this.bufferDone.length){
+          const id=this.bufferDone.shift();
+          if(id!==completed+1)throw Error('Buffered completion sequence mismatch at '+id);
+          completed++;
+          onProgress(completed,segments.length);
+        }
+        if(completed>=segments.length)break;
+        if(performance.now()-start>totalMs+60000)throw Error('Buffered execution timeout');
+        if(performance.now()-heart>220){await this.send('PING');heart=performance.now()}
+        await wait(12);
+      }
+      this.lastJog=[...points.at(-1).q];
+      this.onStatus('Buffered segments completed according to Uno step counters; physical tracking NOT measured.');
+    }catch(e){
+      try{if(this.connected)await this.send('STOP')}catch{}
+      this.armed=false;this.calibrated=false;clearInterval(this.heartbeat);
+      throw e;
+    }finally{this.busy=false;this.bufferDone=[]}
   }
   async disconnect() {
     if (this.busy) await this.stop();

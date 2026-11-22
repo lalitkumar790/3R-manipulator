@@ -49,3 +49,32 @@ A common 28BYJ-48 is low-cost but may be too weak or slow for a long 3R link + p
 `POST /api/plan` with JSON `{"text":"HELLO","speedMmPerSecond":15}` returns IK-validated joint waypoints; the Vercel server does **not** control your serial port. Only your local browser session (Web Serial) can command the Uno after a manual permission grant.
 
 The existing 3R URDF/MJCF joint geometry is provisional; hardware is not validated against its CAD-derived visual mesh yet.
+
+## Experimental buffered synchronized controller (new)
+
+The original Q,seq,j1_mdeg,j2_mdeg,j3_mdeg,lift_um command remains available and unchanged. It independently moves each axis toward the most recently requested target and does not coordinate completion times.
+
+The updated Uno sketch also implements:
+
+B,seq,j1_mdeg,j2_mdeg,j3_mdeg,lift_um,duration_ms
+
+- HELLO reports BUF=1 when the updated sketch is running.
+- ACK,B,seq means a segment was accepted into a six-entry queue.
+- DONE,B,seq means the firmware's commanded step counters reached the endpoint; actual shafts are not measured.
+- Common 2.5 ms time tick, cubic eased segment progress and distributed integer half-steps for all three axes. Experimental synchronized open-loop scheduler, not servoing.
+- Rejects unsafe segment step rates at a nominal ~100 half-step/s with a 1.8x progress-margin. The host keeps four outstanding segments and transmits watchdog heartbeats.
+- Queue underrun waits at the last step position. STOP, DISARM, and watchdog fault clear the queue.
+- Physical pen lift remains disabled by default. With PEN_LIFT_INSTALLED=false any buffered pen contact is rejected.
+- A manually verified zero/home is required. The first pen-up move approaches the starting position slowly; do not use after an uncalibrated jog.
+- Firmware was not compiled on a physical Uno or verified against real motors. Test slowly with pen removed and external emergency power cutoff.
+
+## Reproducible SOFTWARE comparison
+
+The simulator sidebar offers a Stepper controller comparison for circle, square and spiral with XY trace overlays, geometric RMS deviation and completion time bars.
+
+- Original: targets at 20 Hz, each axis chasing independently at up to 400 nominal half-steps/s.
+- Buffered: cubic synchronized stepping, slower segments to target ≤100 half-steps/s nominal.
+
+The software plots omit skipped steps, backlash, torque-speed derating, pen friction, joint compliance, power supply variations and real serial scheduling. Better simulation RMS does not demonstrate actual motor improvement.
+
+After validated pen-lift and safety hardware, measure physical pen traces for both modes, plus execution time, missed steps, temperature and power voltage.

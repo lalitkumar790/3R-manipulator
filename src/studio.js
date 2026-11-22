@@ -1,3 +1,4 @@
+import {installBenchmarkPanel} from './benchmark-panel.js';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import './studio.css';
@@ -218,6 +219,7 @@ $('pen-force').addEventListener('input',renderTorqueAudit);
 $('torque-accel').addEventListener('input',renderTorqueAudit);
 renderTorqueAudit();
 
+installBenchmarkPanel($('benchmark-shape'),$('benchmark-plot'),$('benchmark-bars'),$('benchmark-metrics'));
 const sliders=[];
 for(let i=0;i<3;i++){const d=document.createElement('div');d.className='ctrl';d.innerHTML='<label class="slider-head"><span>J'+(i+1)+' · '+['Base','Elbow','Pen holder'][i]+'</span><span class="val">0°</span></label>';const input=document.createElement('input');input.type='range';input.min=-180;input.max=180;input.step=.5;input.setAttribute('aria-label','Joint '+(i+1));input.addEventListener('input',()=>{playing=false;plan=null;targetQ[i]=Number(input.value)*Math.PI/180;targetLift=.012;setStatus('MANUAL CONTROL')});d.append(input);$('joint-controls').append(d);sliders.push({input,value:d.querySelector('.val')})}
 function updateSlider(){sliders.forEach((s,i)=>{s.input.value=(targetQ[i]*180/Math.PI).toFixed(1);s.value.textContent=(targetQ[i]*180/Math.PI).toFixed(1)+'°'})}
@@ -612,10 +614,14 @@ hw('uno-write').onclick = async () => {
     const twinPlan=await beginWriting(); // Digital twin playback; NOT measured robot feedback.
     if(!twinPlan)throw Error('Local simulator could not validate this path.');
     hwUpdate();
-    await uno.run(payload.points,(done,total)=>{
-      hw('uno-progress').textContent='Target stream '+Math.round(done/total*100)+'% · '+done+'/'+total;
-    });
-    hwStatus('Target stream finished. Motion is NOT independently verified (open-loop steppers).');
+    const buffered=hw('uno-controller-mode').value==='buffered';
+    if(buffered&&!uno.bufferSupported)throw Error('This Uno firmware has no buffered capability (BUF=1). Upload the updated sketch.');
+    const progress=(done,total)=>{
+      hw('uno-progress').textContent=(buffered?'Buffered segments ':'Original targets ')+Math.round(done/total*100)+'% · '+done+'/'+total;
+    };
+    if(buffered)await uno.runBuffered(payload.points,progress);
+    else await uno.run(payload.points,progress);
+    hwStatus((buffered?'Buffered':'Original')+' command stream finished. Physical step accuracy has NOT been measured.');
   } catch(e) {
     stop(); hwStatus('Hardware execution stopped: '+e.message,true);
   } finally { hwUpdate(); }
