@@ -49,18 +49,18 @@ export function prepareStrokes(strokes){
  return clean.map(stroke=>stroke.map(([x,y])=>
   [CENTER_X+(x-centerSourceX)*scale,CENTER_Y-(y-centerSourceY)*scale]));
 }
-export function planStrokes(strokes,speed=.012){
+export function planStrokes(strokes,speed=.012,colors=[]){
  if(!Number.isFinite(speed)||speed<.003||speed>.045)throw Error('Writing speed out of range.');
  const prepared=prepareStrokes(strokes);
  const points=[];
- let last=null,total=0;
+ let last=null,total=0,currentColor='#1c2638',currentStroke=0;
  function append(x,y,lift,ink,dt){
   const q=inverse(x,y,0,1);
   if(!q||q.some(a=>!Number.isFinite(a)))throw Error('A point is outside the 3R workspace.');
   const [fx,fy]=forward(q);
   if(Math.hypot(fx-x,fy-y)>.0001)throw Error('IK check failed.');
   if(points.length>=MAX_OUTPUT_POINTS)throw Error('Drawing exceeds 7500 robot waypoints. Draw fewer or larger strokes.');
-  const step={x,y,lift,ink,q,dt:Math.max(.006,dt)};
+  const step={x,y,lift,ink,q,dt:Math.max(.006,dt),color:currentColor,strokeIndex:currentStroke};
   points.push(step);total+=step.dt;
  }
  function travel(to,lift,ink){

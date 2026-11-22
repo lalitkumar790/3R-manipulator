@@ -37,3 +37,12 @@
 #draw-pad{display:block;width:100%;height:auto;touch-action:none;border:1px solid #7393b3;border-radius:9px;background:#f6f9fd;cursor:crosshair}
 #draw-count{font-variant-numeric:tabular-nums}
 #stroke-info{margin-top:9px}
+
+.drawing-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
+#image-input-panel[hidden]{display:none!important}
+#image-dropzone{border:1px dashed #779abf;padding:15px;text-align:center;border-radius:10px;color:#b8d5ed;background:#122a47;cursor:pointer;margin:10px 0;font-size:12px}
+#image-dropzone:focus,#image-dropzone:hover{border-color:#6fd0ef;background:#194168}
+#image-file{width:100%;max-width:100%;font-size:11px;margin-bottom:8px}
+#image-preview{display:block;width:100%;height:auto;border-radius:9px;background:#fff;margin:8px 0}
+#image-colors{border:1px solid #466889;background:#132e49;color:#e8f5ff;border-radius:8px;padding:7px}
+#export-actions button{font-size:10px;flex:1}

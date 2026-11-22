@@ -10,8 +10,8 @@ export default function handler(req,res) {
   const mode=body.mode||'latin';
   const text=body.text||'';
   const speed=body.speedMmPerSecond??15;
-  if(!['latin','hindi','draw'].includes(mode)||!Number.isFinite(speed)||speed<5||speed>45)
-    return res.status(400).json({error:'mode must be latin, hindi or draw; speed must be 5–45 mm/s'});
+  if(!['latin','hindi','draw','image'].includes(mode)||!Number.isFinite(speed)||speed<5||speed>45)
+    return res.status(400).json({error:'mode must be latin, hindi, draw or image; speed must be 5–45 mm/s'});
   if(typeof text!=='string'||text.length>24)
     return res.status(400).json({error:'Text is too long.'});
   if(mode==='latin'&&body.strokes!==undefined)
@@ -19,9 +19,12 @@ export default function handler(req,res) {
   if(mode!=='latin'&&!Array.isArray(body.strokes))
     return res.status(400).json({error:'For Hindi and Draw, send the browser-generated stroke coordinates.'});
   try {
-    const plan=mode==='latin'?planWriting(text,speed/1000):planStrokes(body.strokes,speed/1000);
+    const plan=mode==='latin'?planWriting(text,speed/1000)
+      :mode==='image'?planStrokes(body.strokes.map(s=>s.points),speed/1000,body.strokes.map(s=>s.color))
+      :planStrokes(body.strokes,speed/1000);
     if(mode==='hindi')plan.text=text;
     if(mode==='draw')plan.text='CUSTOM DRAWING';
+    if(mode==='image')plan.text='IMPORTED IMAGE';
     if (plan.points.length > 7500) return res.status(422).json({error:'Too many trajectory samples'});
     for (const point of plan.points) {
       if (!point.q.every(q=>Number.isFinite(q)&&Math.abs(q)<=150*Math.PI/180))
@@ -40,8 +43,8 @@ export default function handler(req,res) {
       cur.dt=Math.max(cur.dt,maxSteps/maxHalfstepsPerSecond);
       duration+=cur.dt;
     }
-    return res.status(200).json({version:2,mode,units:{angles:'rad',coordinates:'m',time:'s'},text:plan.text,
+    return res.status(200).json({version:3,mode,units:{angles:'rad',coordinates:'m',time:'s'},text:plan.text,
       points:plan.points,strokes:plan.strokes,estimatedDuration:duration,
-      safety:{requiresManualCalibration:true,requiresLocalArm:true,closedLoopFeedback:false,penLiftRequired:true,maxPlannedHalfStepsPerSecond:100,motorTorqueVerified:false,accelerationLimited:false}});
+      safety:{requiresManualCalibration:true,requiresLocalArm:true,closedLoopFeedback:false,penLiftRequired:true,maxPlannedHalfStepsPerSecond:100,motorTorqueVerified:false,accelerationLimited:false,automaticColorChange:false}});
   } catch(err) {return res.status(422).json({error:String(err.message).slice(0,200)});}
 }

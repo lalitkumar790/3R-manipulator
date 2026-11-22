@@ -5,6 +5,8 @@ import {planWriting,forward,inverse} from './writing.js';
 import {planStrokes} from './path-planner.js';
 import {hindiTextToStrokes} from './hindi-outline.js';
 import {installDrawPad} from './draw-pad.js';
+import {traceRaster,PEN_COLORS} from './image-trace.js';
+import {exportDesignFiles} from './design-export.js';
 import {attachCad} from './cad-loader.js';
 import {estimateTorque,motorReferenceTorqueNm} from './torque-estimate.js';
 const $=id=>document.getElementById(id);
@@ -144,16 +146,21 @@ function showMotorGeometry(on){
 $('show-steppers').addEventListener('change',e=>showMotorGeometry(e.target.checked));
 showMotorGeometry(true);
 const penCarrier=new THREE.Group();penCarrier.position.set(.060,0,0);j3.add(penCarrier);
-const penBody=solid(penCarrier,new THREE.CylinderGeometry(.0032,.0032,.102,18),mat(0xe7f2fa,.18,.35),0,0,-.031);
+// Vertical, calibrated-length ballpoint geometry: narrow metal grip + true down-pointing nib.
+// The tip apex remains at local Z=-82 mm to preserve the existing kinematic tip frame.
+const penBody=solid(penCarrier,new THREE.CylinderGeometry(.00315,.00315,.085,24),mat(0xe8f2fb,.18,.32),0,0,-.0225);
 penBody.rotation.x=Math.PI/2;
-const nib=solid(penCarrier,new THREE.ConeGeometry(.0035,.007,20),mat(0xff6d96,.22,.45),0,0,-.079);
-nib.rotation.x=Math.PI/2;
+const penGrip=solid(penCarrier,new THREE.CylinderGeometry(.00315,.00115,.014,24),mat(0xa7b7c9,.55,.31),0,0,-.072);
+penGrip.rotation.x=Math.PI/2;
+const nib=solid(penCarrier,new THREE.ConeGeometry(.0013,.006,24),mat(0x1c2638,.6,.2),0,0,-.079);
+nib.rotation.x=-Math.PI/2; // apex faces paper at z=-.082
 const tipObject=new THREE.Object3D();tipObject.position.z=-.082;penCarrier.add(tipObject);
 const tipTmp=new THREE.Vector3();
 function actualTip(){scene.updateMatrixWorld(true);return tipObject.getWorldPosition(tipTmp.clone());}
 let targetQ=[-.85,1.4,-.55],displayQ=[...targetQ],targetLift=.012,actualLift=.012,physics=null,physicsTime=0,playing=false,paused=false,plan=null,planIndex=0,planClock=0,inkPoints=[],line=null,previous=null,slowAccumulator=0;
 const inkMaterial=new THREE.LineBasicMaterial({color:0x174d9b,linewidth:2});
 const dragMaterial=new THREE.LineBasicMaterial({color:0xe58b42,linewidth:2});
+const inkLayers=new Map();let previousInkColor=null;
 let dragPoints=[], dragLine=null, lastTravelMode=null;
 const penMode=()=>document.querySelector('input[name="pen-mode"]:checked')?.value||'lift';
 const fixedPen=()=>penMode()==='fixed';
@@ -174,7 +181,7 @@ function renderWritingPreview(planned){
    const dragging=fixedPen()&&!point.ink;
    if(!point.ink&&!fixedPen())continue;
    ctx.beginPath();ctx.moveTo(X(prev),Y(prev));ctx.lineTo(X(point),Y(point));
-   ctx.strokeStyle=dragging?'#db813a':'#215eaf';ctx.stroke();
+   ctx.strokeStyle=dragging?'#db813a':(point.color||'#215eaf');ctx.stroke();
  }
  ctx.font='14px sans-serif';ctx.fillStyle='#4d5e71';
  ctx.fillText(fixedPen()?'Orange lines = marks made when moving between letters':'Only pen-down strokes are inked',18,H-11);
@@ -214,21 +221,29 @@ function updateSlider(){sliders.forEach((s,i)=>{s.input.value=(targetQ[i]*180/Ma
 function setStatus(text){$('status').textContent=text}
 function message(text,isError=false){$('warning').textContent=text;$('warning').classList.toggle('error',isError)}
 function setJointDisplay(q,lift){j1.rotation.z=q[0];j2.rotation.z=q[1];j3.rotation.z=q[2];penCarrier.position.z=lift;}
-function putInk(p,isTravel=false){
+function putInk(p,isTravel=false,color='#1c2638'){
  if(!Number.isFinite(p.x)||p.z>.0035)return;
+ const key=isTravel?'__travel__':color;
  const a=new THREE.Vector3(p.x,p.y,.0014);
- if(previous && previous.distanceTo(a)>.008)previous=null;
+ if(previous && (previous.distanceTo(a)>.008 || previousInkColor!==key))previous=null;
  if(previous){
-   const target=isTravel?dragPoints:inkPoints;
-   target.push([previous.clone(),a]);
-   const old=isTravel?dragLine:line;
-   if(old){scene.remove(old);old.geometry.dispose()}
-   const next=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(target.flat()),isTravel?dragMaterial:inkMaterial);
-   scene.add(next);if(isTravel)dragLine=next;else line=next;
+   let layer=inkLayers.get(key);
+   if(!layer){layer={segments:[],line:null,material:isTravel?dragMaterial:new THREE.LineBasicMaterial({color,linewidth:2})};inkLayers.set(key,layer)}
+   layer.segments.push(previous.clone(),a);
+   if(layer.line){scene.remove(layer.line);layer.line.geometry.dispose()}
+   layer.line=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(layer.segments),layer.material);
+   scene.add(layer.line);
  }
- previous=a;
+ previous=a;previousInkColor=key;
 }
-function clearInk(){inkPoints=[];dragPoints=[];previous=null;if(line){scene.remove(line);line.geometry.dispose();line=null}if(dragLine){scene.remove(dragLine);dragLine.geometry.dispose();dragLine=null}}
+function clearInk(){
+ inkPoints=[];dragPoints=[];previous=null;previousInkColor=null;
+ for(const layer of inkLayers.values()){
+  if(layer.line){scene.remove(layer.line);layer.line.geometry.dispose()}
+  if(layer.material!==dragMaterial)layer.material.dispose();
+ }
+ inkLayers.clear();line=null;dragLine=null;
+}
 function stop(){playing=false;paused=false;plan=null;targetLift=fixedPen()?0:.012;$('pause').textContent='Pause';$('progress').textContent='IDLE';setStatus(physics?'MUJOCO READY':'KINEMATICS READY')}
 
 // Input adapters: English vector font, browser-shaped Devanagari contours,
@@ -236,34 +251,114 @@ function stop(){playing=false;paused=false;plan=null;targetLift=fixedPen()?0:.01
 const drawPad=installDrawPad($('draw-pad'),(count)=>{
  $('draw-count').textContent=count+' stroke'+(count===1?'':'s');
 });
+let imageSource=null,convertedImage=null,lastExportPlan=null,lastDesignSource=null;
 const writingInputMode=()=>document.querySelector('input[name="write-input-mode"]:checked')?.value||'latin';
+const virtualPen=()=>$('pen-color').value;
+function setExport(plan,source){
+ lastExportPlan=plan;lastDesignSource=source;
+ $('export-json').disabled=!plan;$('export-csv').disabled=!plan;
+}
 function syncInputMode(){
  const mode=writingInputMode();
- $('text-input-panel').hidden=mode==='draw';
+ $('text-input-panel').hidden=mode==='draw'||mode==='image';
  $('draw-input-panel').hidden=mode!=='draw';
+ $('image-input-panel').hidden=mode!=='image';
  $('writing-label').textContent=mode==='hindi'?'हिन्दी में लिखें':'Writing text';
  $('message').placeholder=mode==='hindi'?'नमस्ते':'HELLO';
  $('writing-help').textContent=mode==='hindi'?'Devanagari outlines: नमस्ते, भारत, राम':'Supports A–Z, 0–9 and basic punctuation';
- $('stroke-info').textContent=mode==='draw'
-  ?'Draw one or more continuous shapes. Each line follows your hand-drawn route; the robot preserves aspect ratio while fitting the drawing workspace.'
-  :mode==='hindi'?'Hindi is rendered as Devanagari font outlines and traced as polylines, not converted into natural handwriting centerlines.'
-  :'English uses the original single-line vector font.';
+ $('stroke-info').textContent=mode==='image'
+  ?'Image contours are converted to batches of colored virtual-pen strokes. No automatic real-world pen swapping.'
+  :mode==='draw'?'Trace your design freely. Aspect ratio is preserved inside the robot workspace.'
+  :mode==='hindi'?'Devanagari font outlines, not handwritten centerlines.'
+  :'Original vector handwriting font.';
  $('count').textContent=$('message').value.length+'/24';
- stop();clearInk();renderWritingPreview(null);
+ stop();clearInk();setExport(null,null);renderWritingPreview(null);
 }
 document.querySelectorAll('input[name="write-input-mode"]').forEach(r=>r.addEventListener('change',syncInputMode));
-$('draw-undo').onclick=()=>{drawPad.undo();renderWritingPreview(null)};
-$('draw-clear').onclick=()=>{drawPad.clear();renderWritingPreview(null)};
+$('draw-undo').onclick=()=>{drawPad.undo();setExport(null,null);renderWritingPreview(null)};
+$('draw-clear').onclick=()=>{drawPad.clear();setExport(null,null);renderWritingPreview(null)};
+$('image-detail').oninput=()=>{
+ $('image-detail-label').textContent=$('image-detail').value;
+ convertedImage=null;setExport(null,null);renderWritingPreview(null);
+};
+$('image-colors').onchange=()=>{convertedImage=null;setExport(null,null);renderWritingPreview(null)};
+function invalidateImage(){
+ convertedImage=null;setExport(null,null);renderWritingPreview(null);
+}
+async function loadImage(file){
+ if(!file||!file.type?.startsWith('image/'))throw Error('Select or paste an image file.');
+ if(file.size>8*1024*1024)throw Error('Image larger than 8 MB.');
+ imageSource=file;invalidateImage();
+ const bitmap=await createImageBitmap(file);
+ try{
+  const canvas=$('image-preview'),ctx=canvas.getContext('2d');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  const scale=Math.min(canvas.width/bitmap.width,canvas.height/bitmap.height);
+  ctx.drawImage(bitmap,(canvas.width-bitmap.width*scale)/2,(canvas.height-bitmap.height*scale)/2,bitmap.width*scale,bitmap.height*scale);
+  $('image-status').textContent=(file.name||'Pasted image')+' · '+bitmap.width+'×'+bitmap.height+' px · '+(file.size/1024).toFixed(0)+' KB. Click Convert image to robot paths.';
+ }finally{bitmap.close()}
+}
+$('image-file').onchange=async e=>{try{await loadImage(e.target.files?.[0])}catch(err){$('image-status').textContent=err.message}};
+const dropzone=$('image-dropzone');
+dropzone.onclick=()=>$('image-file').click();
+dropzone.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('image-file').click()}};
+dropzone.ondragover=e=>{e.preventDefault();dropzone.classList.add('dragging')};
+dropzone.ondragleave=()=>dropzone.classList.remove('dragging');
+dropzone.ondrop=async e=>{
+ e.preventDefault();dropzone.classList.remove('dragging');
+ const file=[...(e.dataTransfer?.files||[])].find(f=>f.type.startsWith('image/'));
+ try{await loadImage(file)}catch(err){$('image-status').textContent=err.message}
+};
+window.addEventListener('paste',async e=>{
+ if(writingInputMode()!=='image')return;
+ const f=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'))?.getAsFile();
+ if(f){e.preventDefault();try{await loadImage(f)}catch(err){$('image-status').textContent=err.message}}
+});
+async function convertImage(){
+ if(!imageSource)throw Error('Upload or paste an image first.');
+ $('image-status').textContent='Tracing image contours…';
+ convertedImage=await traceRaster(imageSource,{mode:$('image-colors').value,detail:Number($('image-detail').value)});
+ const strokes=convertedImage.strokes;
+ $('image-status').textContent=strokes.length+' color-grouped contours converted from '+convertedImage.meta.fileName+'. Preview and export ready.';
+ const planned=await planCurrentInput();
+ if(fixedPen())planned.points=planned.points.map(p=>({...p,lift:0}));
+ renderWritingPreview(planned);
+ setExport(planned,{inputType:'image',...convertedImage.meta});
+ message(planned.points.length+' joint waypoints prepared. Color layers are virtual. Click Plan & simulate to animate.');
+ return planned;
+}
+$('image-convert').onclick=async()=>{
+ try{await convertImage()}catch(err){convertedImage=null;setExport(null,null);$('image-status').textContent='Conversion failed: '+err.message;message(err.message,true)}
+};
+$('export-json').onclick=()=>{try{exportDesignFiles(lastExportPlan,lastDesignSource).json()}catch(e){message(e.message,true)}};
+$('export-csv').onclick=()=>{try{exportDesignFiles(lastExportPlan,lastDesignSource).csv()}catch(e){message(e.message,true)}};
 syncInputMode();
 async function planCurrentInput(){
- const speed=Number($('speed').value)/1000,mode=writingInputMode();
- if(mode==='latin')return planWriting($('message').value,speed);
- if(mode==='draw')return planStrokes(drawPad.getStrokes(),speed);
- const strokes=await hindiTextToStrokes($('message').value);
- return planStrokes(strokes,speed);
+ const speed=Number($('speed').value)/1000,mode=writingInputMode(),color=virtualPen();
+ if(mode==='latin'){
+  const p=planWriting($('message').value,speed);
+  p.points=p.points.map(point=>({...point,color}));
+  return p;
+ }
+ if(mode==='draw'){
+  const strokes=drawPad.getStrokes();return planStrokes(strokes,speed,strokes.map(()=>color));
+ }
+ if(mode==='hindi'){
+  const strokes=await hindiTextToStrokes($('message').value);
+  const p=planStrokes(strokes,speed,strokes.map(()=>color));p.text=$('message').value;return p;
+ }
+ if(mode==='image'){
+  if(!convertedImage)throw Error('Convert your uploaded image to robot paths first.');
+  const strokes=convertedImage.strokes;
+  const p=planStrokes(strokes.map(s=>s.points),speed,strokes.map(s=>s.color));p.text=convertedImage.meta.fileName;
+  return p;
+ }
+ throw Error('Unknown design mode');
 }
 async function currentHardwarePayload(){
  const mode=writingInputMode(),speedMmPerSecond=Number($('speed').value);
+ // No physical color-changer exists; image/multicolor execution is SIMULATION ONLY.
+ if(mode==='image')throw Error('Image and colored-pen switching are simulation-only. Manual tool changes are not calibrated.');
  if(mode==='latin')return{mode,text:$('message').value,speedMmPerSecond};
  const strokes=mode==='draw'?drawPad.getStrokes():await hindiTextToStrokes($('message').value);
  return{mode,strokes,speedMmPerSecond,text:mode==='hindi' ? $('message').value : ''};
@@ -276,6 +371,7 @@ async function beginWriting(){
    plan=planned;
    if(fixedPen())plan.points=plan.points.map(point=>({...point,lift:0}));
    renderWritingPreview(plan);
+   setExport(plan,writingInputMode()==='image'?{inputType:'image',...convertedImage.meta}:{inputType:writingInputMode(),text:$('message').value,virtualPen:virtualPen()});
    planIndex=0;planClock=0;playing=true;paused=false;previous=null;
    setStatus(fixedPen()?'WRITING · PEN FIXED':'WRITING · PEN LIFT');
    message(plan.strokes+' strokes · '+plan.estimatedDuration.toFixed(1)+' s · '+plan.points.length+' waypoints. '+(fixedPen()?'Without lift, every travel route marks the paper.':'Virtual lift separates all outlines and strokes.'));
@@ -287,7 +383,8 @@ $('write').onclick=beginWriting;$('pause').onclick=()=>{if(!playing)return;pause
 $('clear').onclick=clearInk;$('home').onclick=()=>{stop();targetQ=[-.85,1.4,-.55];targetLift=.012;updateSlider()};
 $('reset').onclick=()=>{stop();clearInk();targetQ=[-.85,1.4,-.55];updateSlider();physics?.reset();physicsTime=0;message('Reset to the default joint configuration.')};
 $('speed').oninput=e=>$('speed-label').textContent=e.target.value+' mm/s';
-$('message').oninput=e=>$('count').textContent=e.target.value.length+'/24';
+$('message').oninput=e=>{$('count').textContent=e.target.value.length+'/24';setExport(null,null)};
+$('pen-color').onchange=()=>{setExport(null,null);renderWritingPreview(null)};
 document.querySelectorAll('input[name="pen-mode"]').forEach(radio=>radio.addEventListener('change',()=>{
  if(playing)stop();clearInk();
  $('pen-mode-hint').textContent=fixedPen()?'No-lift visualization: pen stays at the paper level throughout; travel paths leave visible orange marks. Simulation only.':'Virtual pen lift (12 mm) between strokes. No physical lift is installed.';
@@ -342,8 +439,9 @@ function frame(t){requestAnimationFrame(frame);const dt=Math.min(.08,Math.max(0,
  $('feedback').textContent=displayQ.map((q,i)=>'J'+(i+1)+' '+(q*180/Math.PI).toFixed(1)+'°').join(' · ');
  $('lift').textContent=(actualLift*1000).toFixed(1)+' mm';
  const currentPoint=plan?.points[Math.min(planIndex,plan.points.length-1)];
+ if(currentPoint?.color && nib.material?.color)nib.material.color.set(currentPoint.color);
  if(playing&&!paused&&currentPoint&&planIndex>0&&actualLift<.0035&&(currentPoint.ink||fixedPen())){
-   putInk(p,!currentPoint.ink);
+   putInk(p,!currentPoint.ink,currentPoint.color||'#1c2638');
  }else previous=null;
  controls.update();renderer.render(scene,camera)
 }
@@ -367,7 +465,7 @@ function hwUpdate() {
   hw('uno-zero').disabled = !connected || armed || busy;
   hw('uno-arm').disabled = !connected || !calibrated || armed || busy;
   hw('uno-jog').disabled = !connected || !armed || busy;
-  hw('uno-write').disabled = !connected || !armed || busy;
+  hw('uno-write').disabled = !connected || !armed || busy || writingInputMode()==='image';
   hw('uno-disarm').disabled = !connected || !armed || busy;
   hw('uno-stop').disabled = !connected;
 }
@@ -413,6 +511,7 @@ hw('uno-stop').onclick = async () => {
 };
 hw('uno-write').onclick = async () => {
   if(!uno?.armed || uno.busy)return;
+  if(writingInputMode()==='image'){hwStatus('Multicolor image writing is simulation-only; no physical pen changer is installed.',true);return;}
   if(!uno.penLiftInstalled){hwStatus('Uno reports no pen lift. Firmware must be configured and tested before pen-down writing.',true);return;}
   if(!confirm('Send this writing plan to the REAL robot? Keep one hand near the physical emergency power cutoff. The arm is open-loop and axes are not calibrated.'))return;
   try {
@@ -436,6 +535,7 @@ hw('uno-write').onclick = async () => {
     stop(); hwStatus('Hardware execution stopped: '+e.message,true);
   } finally { hwUpdate(); }
 };
+document.querySelectorAll('input[name="write-input-mode"]').forEach(r=>r.addEventListener('change',hwUpdate));
 const oldPause=hw('pause').onclick;
 hw('pause').onclick=(e)=>{
   if(uno?.busy){ hw('uno-stop').click(); hwStatus('Physical execution cannot be paused safely; STOP requested.');return; }

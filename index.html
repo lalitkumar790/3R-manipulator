@@ -5,7 +5,7 @@
 <div class="drawing-tabs" role="group" aria-label="Writing input mode">
   <label><input type="radio" name="write-input-mode" value="latin" checked> English</label>
   <label><input type="radio" name="write-input-mode" value="hindi"> हिन्दी</label>
-  <label><input type="radio" name="write-input-mode" value="draw"> Draw / Scribble</label>
+  <label><input type="radio" name="write-input-mode" value="draw"> Draw / Scribble</label><label><input type="radio" name="write-input-mode" value="image"> Image → Drawing</label>
 </div><div id="text-input-panel"><label for="message" id="writing-label">Writing text</label><textarea id="message" maxlength="24" rows="2" placeholder="HELLO">HELLO</textarea><div class="row micro"><span id="writing-help">Supports A–Z, 0–9 and basic punctuation</span><span id="count">5/24</span></div></div>
 <div id="draw-input-panel" hidden>
  <label for="draw-pad">Draw anything</label>
@@ -13,7 +13,19 @@
  <div class="row between micro"><span>Use mouse, touchscreen or stylus</span><span id="draw-count">0 strokes</span></div>
  <div class="row action"><button id="draw-undo" class="secondary" type="button">Undo stroke</button><button id="draw-clear" class="secondary" type="button">Clear drawing</button></div>
 </div>
-<div class="message" id="stroke-info">Your drawing will be scaled proportionally into the 3R writing workspace, with each stroke preserved.</div><div class="pen-mode">
+<div id="image-input-panel" hidden>
+  <label for="image-file">Upload or paste an image</label>
+  <div id="image-dropzone" tabindex="0" role="button" aria-label="Paste or drop an image">Drop an image here · Ctrl+V to paste · or choose file</div>
+  <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" />
+  <canvas id="image-preview" width="640" height="240" aria-label="Uploaded image preview"></canvas>
+  <div class="row between"><label for="image-colors">Pen palette</label><select id="image-colors"><option value="color">5 virtual colors</option><option value="mono">Black outline only</option></select></div>
+  <label class="slider-head" for="image-detail">Contour detail <span id="image-detail-label">50</span></label>
+  <input id="image-detail" type="range" min="10" max="90" step="10" value="50"/>
+  <div class="row action"><button id="image-convert" type="button" class="primary-subtle">Convert image to robot paths</button></div>
+  <div class="message" id="image-status">No image selected. Best results: bold line art, logos and simple illustrations.</div>
+ </div>
+ <div class="row action" id="export-actions"><button id="export-json" type="button" disabled>Download JSON data</button><button id="export-csv" type="button" disabled>Download CSV trajectory</button></div>
+ <div class="message" id="stroke-info">Your drawing will be scaled proportionally into the 3R writing workspace, with each stroke preserved.</div><div class="row between pen-color-control"><label for="pen-color">Virtual pen color</label><select id="pen-color"><option value="#1c2638">Black</option><option value="#2563eb">Blue</option><option value="#dc3545">Red</option><option value="#169b62">Green</option><option value="#e88c2b">Orange</option></select></div><div class="pen-mode">
   <div class="eyebrow">SIMULATION · PEN CONTACT</div>
   <label class="mode-option"><input type="radio" name="pen-mode" value="lift" checked><span><strong>Pen lift</strong><small>Clean letters, virtual pen raises between strokes</small></span></label>
   <label class="mode-option"><input type="radio" name="pen-mode" value="fixed"><span><strong>Fixed pen (no lift)</strong><small>Continuous contact; connecting marks remain on paper</small></span></label>
