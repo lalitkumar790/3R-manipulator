@@ -64,10 +64,10 @@ function simulateLegacy(points){
  }
  return{samples,durationS:time};
 }
-function simulateBuffered(points,adaptive=false){
+function simulateBuffered(points,adaptive=false,torqueAware=false){
  // Start at the known first target to isolate interpolation from homing.
  // Physical firmware additionally needs a slow pen-up approach segment.
- const segments=bufferSegments(points,{maxHalfStepsPerSecond:100,adaptive}).filter(s=>s.ink);
+ const segments=bufferSegments(points,{maxHalfStepsPerSecond:100,adaptive,torqueAware}).filter(s=>s.ink);
  let current=stepQ(points[0].q),durationS=0;
  const samples=[tip(current)];
  for(let k=0;k<segments.length;k++){
@@ -82,13 +82,14 @@ function simulateBuffered(points,adaptive=false){
 }
 export function runComparison(name){
  const {points,shape}=exampleDrawing(name);
- const old=simulateLegacy(points),buffered=simulateBuffered(points),adaptive=simulateBuffered(points,true);
+ const old=simulateLegacy(points),buffered=simulateBuffered(points),adaptive=simulateBuffered(points,true),torque=simulateBuffered(points,true,true);
  const rates=adaptiveStepRates(points,{maxRate:100,minRate:30}).filter((r,i)=>points[i].ink).map(r=>r.rate);
  return{name,legacy:{...rmsDeviation(old.samples,shape),durationS:old.durationS},
   buffered:{...rmsDeviation(buffered.samples,shape),durationS:buffered.durationS},
   adaptive:{...rmsDeviation(adaptive.samples,shape),durationS:adaptive.durationS,minRate:Math.min(...rates),maxRate:Math.max(...rates),meanRate:rates.reduce((a,b)=>a+b,0)/rates.length},
+  torque:{...rmsDeviation(torque.samples,shape),durationS:torque.durationS},
   rates,
-  traces:{reference:shape,legacy:old.samples,buffered:buffered.samples,adaptive:adaptive.samples}};
+  traces:{reference:shape,legacy:old.samples,buffered:buffered.samples,adaptive:adaptive.samples,torque:torque.samples}};
 }
 export function benchmarkAll(){
  return ['circle','square','spiral'].map(runComparison);

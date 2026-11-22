@@ -220,6 +220,21 @@ $('torque-accel').addEventListener('input',renderTorqueAudit);
 renderTorqueAudit();
 
 installBenchmarkPanel($('benchmark-shape'),$('benchmark-plot'),$('benchmark-bars'),$('benchmark-metrics'));
+$('mujoco-compare-run').onclick=async()=>{
+ const button=$('mujoco-compare-run'),output=$('mujoco-compare-results');
+ button.disabled=true;button.textContent='Running MuJoCo experiment…';
+ output.textContent='Replaying fixed and torque-aware trajectories against the same torque-limited MJCF. This can use substantial browser CPU.';
+ try{
+  const {validateCircleMuJoCo,drawMuJoCoValidation}=await import('./mujoco-validation.js');
+  const results=await validateCircleMuJoCo();
+  const fmt=r=>r.ok
+   ?'RMS '+r.rmsMm.toFixed(2)+' mm; peak '+r.maxMm.toFixed(2)+' mm; above 3 mm '+r.percentAbove3mm.toFixed(1)+'%; '+r.durationS.toFixed(1)+' s simulated'
+   :'INCONCLUSIVE: '+r.reason;
+  output.textContent='Fixed buffered: '+fmt(results.fixed)+'\nTorque-aware buffered: '+fmt(results.torque)+'\nMuJoCo model, not physical robot measurements.';
+  drawMuJoCoValidation($('mujoco-compare-plot'),results);
+ }catch(err){output.textContent='MuJoCo validation could not finish: '+err.message;}
+ finally{button.disabled=false;button.textContent='Run MuJoCo circle experiment';}
+};
 const sliders=[];
 for(let i=0;i<3;i++){const d=document.createElement('div');d.className='ctrl';d.innerHTML='<label class="slider-head"><span>J'+(i+1)+' · '+['Base','Elbow','Pen holder'][i]+'</span><span class="val">0°</span></label>';const input=document.createElement('input');input.type='range';input.min=-180;input.max=180;input.step=.5;input.setAttribute('aria-label','Joint '+(i+1));input.addEventListener('input',()=>{playing=false;plan=null;targetQ[i]=Number(input.value)*Math.PI/180;targetLift=.012;setStatus('MANUAL CONTROL')});d.append(input);$('joint-controls').append(d);sliders.push({input,value:d.querySelector('.val')})}
 function updateSlider(){sliders.forEach((s,i)=>{s.input.value=(targetQ[i]*180/Math.PI).toFixed(1);s.value.textContent=(targetQ[i]*180/Math.PI).toFixed(1)+'°'})}
@@ -615,15 +630,16 @@ hw('uno-write').onclick = async () => {
     if(!twinPlan)throw Error('Local simulator could not validate this path.');
     hwUpdate();
     const controllerMode=hw('uno-controller-mode').value;
-    const buffered=controllerMode==='buffered'||controllerMode==='adaptive';
-    const adaptive=controllerMode==='adaptive';
+    const buffered=controllerMode==='buffered'||controllerMode==='adaptive'||controllerMode==='torque';
+    const adaptive=controllerMode==='adaptive'||controllerMode==='torque';
+    const torqueAware=controllerMode==='torque';
     if(buffered&&!uno.bufferSupported)throw Error('This Uno firmware has no buffered capability (BUF=1). Upload the updated sketch.');
     const progress=(done,total)=>{
       hw('uno-progress').textContent=(buffered?'Buffered segments ':'Original targets ')+Math.round(done/total*100)+'% · '+done+'/'+total;
     };
-    if(buffered)await uno.runBuffered(payload.points,progress,{adaptive});
+    if(buffered)await uno.runBuffered(payload.points,progress,{adaptive,torqueAware});
     else await uno.run(payload.points,progress);
-    hwStatus((adaptive?'Adaptive buffered':buffered?'Fixed buffered':'Original')+' command stream finished. Physical step accuracy has NOT been measured.');
+    hwStatus((torqueAware?'Torque-aware buffered':adaptive?'Adaptive buffered':buffered?'Fixed buffered':'Original')+' command stream finished. Physical step accuracy has NOT been measured.');
   } catch(e) {
     stop(); hwStatus('Hardware execution stopped: '+e.message,true);
   } finally { hwUpdate(); }

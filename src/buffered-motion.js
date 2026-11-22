@@ -1,14 +1,16 @@
+import {torqueBudget,torqueTimeMs} from './torque-adaptive.js';
 import {adaptiveStepRates} from './adaptive-speed.js';
 // Shared pure motion preparation for the experimental Uno buffered protocol.
 // Hardware step counts are *commands*, not encoder measurements.
 export const NOMINAL_STEPS_PER_REV=4096;
 const radToSteps=q=>Math.round(q*NOMINAL_STEPS_PER_REV/(2*Math.PI));
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-export function bufferSegments(points,{maxHalfStepsPerSecond=100,maxSegmentMs=11000,adaptive=false}={}){
+export function bufferSegments(points,{maxHalfStepsPerSecond=100,maxSegmentMs=11000,adaptive=false,torqueAware=false,assumedPenForceN=.06}={}){
  if(!Array.isArray(points)||!points.length||points.length>7500)throw Error('Invalid trajectory.');
  if(!Number.isFinite(maxHalfStepsPerSecond)||maxHalfStepsPerSecond<20||maxHalfStepsPerSecond>120)throw Error('Unsafe step-rate request.');
  const segments=[],allowedSteps=NOMINAL_STEPS_PER_REV*150/360;
- const speedProfile=adaptive?adaptiveStepRates(points,{maxRate:maxHalfStepsPerSecond,minRate:30}):null;
+ const speedProfile=(adaptive||torqueAware)?adaptiveStepRates(points,{maxRate:maxHalfStepsPerSecond,minRate:30}):null;
+ const limits=torqueAware?torqueBudget({forceN:assumedPenForceN}).jointLimits:null;
  let index=-1;
  let previous=null,previousLift=12000;
  function append(q,lift,ms,ink){
@@ -18,7 +20,7 @@ export function bufferSegments(points,{maxHalfStepsPerSecond=100,maxSegmentMs=11
   const halfSteps=Math.max(...target.map((value,i)=>Math.abs(value-origin[i])));
   // Check after target-step quantization. Rounding intermediate angles or
   // durations can otherwise violate the firmware's 1.8× speed margin.
-  const safeMs=Math.max(40,Math.ceil(ms),Math.ceil(halfSteps*1800/maxHalfStepsPerSecond));
+  const safeMs=Math.max(40,Math.ceil(ms),Math.ceil(halfSteps*1800/maxHalfStepsPerSecond),limits?torqueTimeMs(origin,target,limits):0);
   if(safeMs>maxSegmentMs)throw Error('A buffered segment exceeds firmware duration; simplify the path.');
   segments.push({q:target,lift,ms:safeMs,ink:!!ink});
  }
@@ -45,7 +47,7 @@ export function bufferSegments(points,{maxHalfStepsPerSecond=100,maxSegmentMs=11
   }
   const delta=Math.max(...q.map((v,i)=>Math.abs(v-previous[i])));
   // Smoothstep has peak speed 1.5× mean. Reserve another 20% for quantization.
-  const allowedRate=adaptive?speedProfile[index].rate:maxHalfStepsPerSecond;
+  const allowedRate=(adaptive||torqueAware)?speedProfile[index].rate:maxHalfStepsPerSecond;
   const speedLimited=delta*1800/allowedRate;
   const requested=Math.max(40,p.dt*1000);
   const duration=Math.max(requested,speedLimited);

@@ -180,7 +180,7 @@ export class UnoBridge {
     if(!this.bufferSupported)throw Error('Flash compatible firmware with BUF=1 capability.');
     if(!this.penLiftInstalled)throw Error('Buffered pen-down drawing needs tested physical pen lift.');
     if(this.stepsPerRevolution!==4096)throw Error('Buffered commands require verified 4096 half-steps/rev calibration.');
-    const segments=bufferSegments(points,{maxHalfStepsPerSecond:100,adaptive:options.adaptive===true});
+    const segments=bufferSegments(points,{maxHalfStepsPerSecond:100,adaptive:options.adaptive===true,torqueAware:options.torqueAware===true});
     if(!segments.length)throw Error('Empty buffered trajectory.');
     if(segments.some(x=>x.lift<0||x.lift>12000||x.ms<40||x.ms>11000))
       throw Error('Buffered segment outside limits.');

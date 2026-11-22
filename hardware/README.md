@@ -89,3 +89,19 @@ Three modes can be compared using the Stepper controller comparison panel:
 Tight corners and small-radius curves produce lower budgets; straight regions can return toward 100. The adaptive planner retains the firmware's conservative rate cap and pen-up first requirement. There is **no real motor feedback**, torque measurement, missed-step detection or online path replanning. In particular, adaptive does not guarantee better drawing accuracy than fixed buffered motion; software tests illustrate trade-offs in geometric stepping error and time.
 
 The rate schedule is based on image/text-derived coordinates, not measured motor state. Both buffered modes still require pen-lift hardware and have NOT been validated by flashing or exercising the Uno with motors connected. Use external motor power, mechanical support, and emergency cutoff for all physical tests.
+
+## Experimental torque-aware feedforward planning
+
+A fourth simulator/controller option, Torque-aware adaptive, uses the same optional buffered B serial protocol but applies an additional estimated acceleration limit to each joint:
+
+- CAD-estimated planar link inertias from src/torque-estimate.js.
+- Nominal motor reference torque 0.0343 N m, NOT a full torque-speed curve.
+- Default assumed pen drag 0.06 N, and 70% reference torque headroom.
+- Joint acceleration ceiling 0.65 rad/s^2 (conservative engineering parameter).
+- Cubic smoothstep time bound: t >= sqrt(6 |deltaAngle| / maxJointAccel). Rounded final step positions are revalidated.
+
+If assumed drag exceeds the selected torque budget, the planner rejects motion rather than pretending the drivetrain can perform it. This does not include gear backlash, supply voltage sag, real motor torque-speed derating, bearing friction, actual pen normal force, missed steps, or link flex; no motor sensing exists. Torque-aware mode is OFF by default for hardware, and real pen lift remains mandatory.
+
+## Browser MuJoCo replay
+
+In the Stepper controller comparison panel, click Run MuJoCo circle experiment to simulate fixed buffered versus torque-aware buffered against the *same* torque-limited MJCF. Results are RMS and peak XY **tracking error against time-matched command position**, percent samples over 3 mm, and commanded duration. The experiment can fail or report INCONCLUSIVE if the virtual arm cannot reach the starting pose. The tool uses simulated qpos, not real encoders, and has not been calibrated against the assembled robot. The benchmark chart above it is a separate deterministic commanded-step-path comparison; do not combine their RMS numbers as if measured under the same conditions.
