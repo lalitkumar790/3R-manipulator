@@ -13,7 +13,14 @@ export function bufferSegments(points,{maxHalfStepsPerSecond=100,maxSegmentMs=11
  let previous=null,previousLift=12000;
  function append(q,lift,ms,ink){
   if(segments.length>=2400)throw Error('Too many buffered segments; simplify the drawing.');
-  segments.push({q:q.map(radToSteps),lift,ms:Math.round(ms),ink:!!ink});
+  const target=q.map(radToSteps);
+  const origin=segments.length?segments[segments.length-1].q:[0,0,0];
+  const halfSteps=Math.max(...target.map((value,i)=>Math.abs(value-origin[i])));
+  // Check after target-step quantization. Rounding intermediate angles or
+  // durations can otherwise violate the firmware's 1.8× speed margin.
+  const safeMs=Math.max(40,Math.ceil(ms),Math.ceil(halfSteps*1800/maxHalfStepsPerSecond));
+  if(safeMs>maxSegmentMs)throw Error('A buffered segment exceeds firmware duration; simplify the path.');
+  segments.push({q:target,lift,ms:safeMs,ink:!!ink});
  }
  for(const p of points){
   index++;
