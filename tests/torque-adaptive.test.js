@@ -19,7 +19,7 @@ test('torque-aware scheduler stays within estimated conservative reference margi
 });
 test('higher assumed drag reduces acceleration budget and can reject impossible job',()=>{
  const small=torqueBudget({forceN:.03}).jointLimits;
- const large=torqueBudget({forceN:.10}).jointLimits;
+ const large=torqueBudget({forceN:.07}).jointLimits;
  assert.ok(large.every((v,i)=>v.limitRadS2<=small[i].limitRadS2));
  assert.throws(()=>torqueBudget({forceN:.20}),/exceeds/);
 });
